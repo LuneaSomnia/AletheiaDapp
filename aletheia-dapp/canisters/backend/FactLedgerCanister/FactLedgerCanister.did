@@ -1,0 +1,39 @@
+service : {
+  storeFact: (
+    claimId: text,
+    claim: text,
+    verdict: verdict,
+    explanation: text,
+    evidence: vec record {
+      sourceUrl: text;
+      contentHash: text;
+      credibilityScore: nat;
+    },
+    aletheians: vec principal
+  ) -> (result);
+  getFact: (claimId: text) -> (opt factRecord) query;
+  getClaimHistory: (claimId: text) -> (vec factRecord) query;
+  searchClaims: (query: text) -> (vec factRecord) query;
+}
+
+type result = variant { ok; err: text };
+
+type verdict = variant {
+  True; MostlyTrue; HalfTruth; MisleadingContext; False; MostlyFalse;
+  Unsubstantiated; Outdated; Satire; Opinion;
+};
+
+type factRecord = record {
+  claim: text;
+  verdict: verdict;
+  explanation: text;
+  evidence: vec record {
+    sourceUrl: text;
+    contentHash: text;
+    credibilityScore: nat;
+  };
+  verifiedAt: int;
+  aletheians: vec principal;
+  version: nat;
+  previousVersion: opt factRecord;
+};

@@ -1,0 +1,34 @@
+service : {
+  assignClaim: (
+    claimId: text,
+    aletheianIds: vec principal,
+    deadline: int
+  ) -> (result);
+  submitVerification: (
+    claimId: text,
+    verdict: verdict,
+    explanation: text
+  ) -> (result);
+  checkConsensus: (claimId: text) -> (opt bool) query;
+  getAssignments: () -> (vec assignment) query;
+}
+
+type result = variant { ok; err: text };
+
+type verdict = variant {
+  True; MostlyTrue; HalfTruth; MisleadingContext; False; MostlyFalse;
+  Unsubstantiated; Outdated; Satire; Opinion;
+};
+
+type assignment = record {
+  claimId: text;
+  assignedTo: vec principal;
+  deadline: int;
+  status: variant { Pending; InProgress; Completed; Escalated };
+  verifications: vec record {
+    aletheianId: principal;
+    verdict: verdict;
+    explanation: text;
+    submittedAt: int;
+  };
+};

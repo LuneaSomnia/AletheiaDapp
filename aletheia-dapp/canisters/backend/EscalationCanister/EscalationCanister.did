@@ -1,0 +1,26 @@
+service : {
+  createEscalation: (
+    claimId: text,
+    originalAssignments: vec principal,
+    originalVerifications: vec record {
+      aletheianId: principal;
+      verdict: verdict;
+      explanation: text;
+      submittedAt: int;
+    },
+    seniorAssignments: vec principal
+  ) -> (result);
+  submitSeniorVerification: (
+    claimId: text,
+    verdict: verdict,
+    explanation: text
+  ) -> (result);
+  finalizeEscalation: (claimId: text, finalVerdict: verdict) -> (result);
+}
+
+type result = variant { ok; err: text };
+
+type verdict = variant {
+  True; MostlyTrue; HalfTruth; MisleadingContext; False; MostlyFalse;
+  Unsubstantiated; Outdated; Satire; Opinion;
+};

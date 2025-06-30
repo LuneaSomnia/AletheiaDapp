@@ -1,0 +1,9 @@
+service : {
+  createProfile: (username: opt text) -> (result);
+  getProfile: () -> (result) query;
+  updateProfile: (username: opt text) -> (result);
+  updateXP: (xpDelta: int) -> (result);
+  addBadge: (badge: text) -> (result);
+}
+
+type result = variant { ok; err: text };

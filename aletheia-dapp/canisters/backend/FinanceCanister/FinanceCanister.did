@@ -1,0 +1,7 @@
+service : {
+  updateEarnings: (aletheianId: principal, xpEarned: nat) -> ();
+  withdraw: (amount: nat) -> (result);
+  addToPool: (amount: nat) -> ();
+}
+
+type result = variant { ok: text; err: text };
