@@ -1,0 +1,7 @@
+service AI_IntegrationCanister : {
+  generateQuestions: (text, text) -> (vec record { question: text; explanation: text; });
+  retrieveInformation: (text, text) -> (vec record { source: text; url: text; credibilityScore: float; summary: text; });
+  synthesizeReport: (text, vec record { verdict: text; explanation: text; }, vec record { source: text; url: text; credibilityScore: float; summary: text; }) -> (record { verdict: text; explanation: text; evidenceHighlights: vec text; });
+  getQuestions: (text) -> (opt vec record { question: text; explanation: text; }) query;
+  getResearch: (text) -> (opt vec record { source: text; url: text; credibilityScore: float; summary: text; }) query;
+}

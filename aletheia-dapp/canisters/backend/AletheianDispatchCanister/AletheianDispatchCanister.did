@@ -1,0 +1,27 @@
+service AletheianDispatchCanister : {
+  registerAletheian: (record {
+      id: principal;
+      expertise: vec text;
+      reputation: nat;
+      status: text;
+      location: opt text;
+      lastActive: int;
+  }) -> (variant { ok; err: text });
+  updateAletheianStatus: (principal, text) -> (variant { ok; err: text });
+  addClaim: (record {
+      id: text;
+      content: text;
+      category: opt text;
+      complexity: text;
+      submittedAt: int;
+  }) -> (variant { ok; err: text });
+  assignClaims: () -> (variant { ok; err: text });
+  getAssignments: (text) -> (opt vec principal) query;
+  getNextAssignment: () -> (opt record {
+      id: text;
+      content: text;
+      category: opt text;
+      complexity: text;
+      submittedAt: int;
+  }) query;
+}

@@ -1,0 +1,15 @@
+type UserProfile = record {
+  username: opt text;
+  created_at: nat64;
+  last_active: nat64;
+  learning_progress: nat32;
+  submitted_claims: vec text;
+};
+
+service : {
+  create_profile: (opt text) -> (bool);
+  get_profile: () -> (UserProfile) query;
+  update_profile: (opt text) -> (bool);
+  record_claim_submission: (text) -> (bool);
+  get_user_id_by_username: (text) -> (opt principal) query;
+}

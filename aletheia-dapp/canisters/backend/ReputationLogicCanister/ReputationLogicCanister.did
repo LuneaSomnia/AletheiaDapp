@@ -1,0 +1,37 @@
+service ReputationLogicCanister : {
+  initializeAletheian: (principal) -> ();
+  updateXP: (principal, variant {
+      SuccessfulVerification;
+      ComplexityBonus: nat;
+      AccuracyBonus;
+      SpeedBonus;
+      EscalationReview;
+      CouncilResolution;
+      TrainingComplete;
+      Mentoring;
+      DuplicateIdentification;
+      Penalty: nat;
+  }) -> (variant { ok: nat; err: text });
+  getXP: (principal) -> (opt nat) query;
+  getWarnings: (principal) -> (opt nat) query;
+  getRank: (principal) -> (opt variant {
+      Trainee;
+      Junior;
+      Associate;
+      Senior;
+      Expert;
+      Master;
+  }) query;
+  getPerformance: (principal) -> (opt record {
+      accuracy: float;
+      avgVerificationTime: nat;
+      claimsVerified: nat;
+      escalationsResolved: nat;
+  }) query;
+  updatePerformance: (principal, variant {
+      Accuracy: float;
+      VerificationTime: nat;
+      ClaimsVerified: nat;
+      EscalationsResolved: nat;
+  }) -> ();
+}

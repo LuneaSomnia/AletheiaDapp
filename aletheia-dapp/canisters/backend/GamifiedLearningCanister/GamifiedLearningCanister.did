@@ -1,0 +1,26 @@
+type ExerciseType = variant {
+  identify_red_flags: text;
+  source_rating: text;
+  question_crafting: text;
+  quiz: text;
+};
+
+type Exercise = record {
+  id: text;
+  type: ExerciseType;
+  content: text;
+  possible_points: nat16;
+};
+
+type UserProgress = record {
+  total_points: nat32;
+  completed_exercises: vec text;
+  last_active: nat64;
+};
+
+service : {
+  get_exercises: () -> (vec Exercise) query;
+  start_exercise: (text) -> (Exercise);
+  submit_exercise: (text, text) -> (nat16);
+  get_user_progress: (principal) -> (UserProgress) query;
+}

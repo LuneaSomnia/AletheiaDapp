@@ -1,0 +1,23 @@
+type ClaimType = variant {
+  text: text;
+  image: blob;
+  video: blob;
+  audio: blob;
+  article_link: text;
+  fake_site_url: text;
+};
+
+type ClaimSubmission = record {
+  claim: ClaimType;
+  source: opt text;
+  context: opt text;
+  tags: vec text;
+  timestamp: nat64;
+  submitter: principal;
+};
+
+service : {
+  submit_claim: (ClaimSubmission) -> (text) oneway;
+  get_pending_claims: () -> (vec ClaimSubmission) query;
+  process_claim: (text) -> (bool);
+}

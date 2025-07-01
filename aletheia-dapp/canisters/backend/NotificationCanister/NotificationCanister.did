@@ -1,0 +1,48 @@
+service NotificationCanister : {
+  sendNotification: (principal, variant {
+      NewClaimAssignment;
+      ClaimVerified;
+      EscalationRequired;
+      PaymentReceived;
+      SystemAlert;
+  }, text, opt text) -> (nat);
+  sendBulkNotifications: (vec principal, variant {
+      NewClaimAssignment;
+      ClaimVerified;
+      EscalationRequired;
+      PaymentReceived;
+      SystemAlert;
+  }, text, opt text) -> ();
+  getNotifications: (principal) -> (vec record {
+      id: nat;
+      userId: principal;
+      type: variant {
+          NewClaimAssignment;
+          ClaimVerified;
+          EscalationRequired;
+          PaymentReceived;
+          SystemAlert;
+      };
+      message: text;
+      timestamp: int;
+      read: bool;
+      link: opt text;
+  }) query;
+  getUnreadNotifications: (principal) -> (vec record {
+      id: nat;
+      userId: principal;
+      type: variant {
+          NewClaimAssignment;
+          ClaimVerified;
+          EscalationRequired;
+          PaymentReceived;
+          SystemAlert;
+      };
+      message: text;
+      timestamp: int;
+      read: bool;
+      link: opt text;
+  }) query;
+  markAsRead: (principal, nat) -> (bool);
+  markAllAsRead: (principal) -> ();
+}

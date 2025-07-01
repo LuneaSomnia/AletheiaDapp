@@ -1,0 +1,80 @@
+{
+  "canisters": {
+    "user_interface": {
+      "frontend": {
+        "entrypoint": "canisters/frontend/user_interface/src/index.html"
+      },
+      "source": [
+        "canisters/frontend/user_interface/src",
+        "canisters/frontend/user_interface/public"
+      ],
+      "type": "assets"
+    },
+    "aletheian_interface": {
+      "frontend": {
+        "entrypoint": "canisters/frontend/aletheian_interface/src/index.html"
+      },
+      "source": [
+        "canisters/frontend/aletheian_interface/src",
+        "canisters/frontend/aletheian_interface/public"
+      ],
+      "type": "assets"
+    },
+    "UserAccountCanister": {
+      "main": "src/backend/UserAccountCanister/main.mo",
+      "type": "motoko"
+    },
+    "AletheianProfileCanister": {
+      "main": "src/backend/AletheianProfileCanister/main.mo",
+      "type": "motoko"
+    },
+    "FactLedgerCanister": {
+      "main": "src/backend/FactLedgerCanister/main.mo",
+      "type": "motoko"
+    },
+    "ReputationLogicCanister": {
+      "main": "src/backend/ReputationLogicCanister/main.mo",
+      "type": "motoko"
+    },
+    "ClaimSubmissionCanister": {
+      "main": "src/backend/ClaimSubmissionCanister/main.mo",
+      "type": "motoko"
+    },
+    "AI_IntegrationCanister": {
+      "main": "src/backend/AI_IntegrationCanister/main.mo",
+      "type": "motoko"
+    },
+    "AletheianDispatchCanister": {
+      "main": "src/backend/AletheianDispatchCanister/main.mo",
+      "type": "motoko"
+    },
+    "VerificationWorkflowCanister": {
+      "main": "src/backend/VerificationWorkflowCanister/main.mo",
+      "type": "motoko"
+    },
+    "EscalationCanister": {
+      "main": "src/backend/EscalationCanister/main.mo",
+      "type": "motoko"
+    },
+    "FinanceCanister": {
+      "main": "src/backend/FinanceCanister/main.mo",
+      "type": "motoko"
+    },
+    "GamifiedLearningCanister": {
+      "main": "src/backend/GamifiedLearningCanister/main.mo",
+      "type": "motoko"
+    },
+    "NotificationCanister": {
+      "main": "src/backend/NotificationCanister/main.mo",
+      "type": "motoko"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}
