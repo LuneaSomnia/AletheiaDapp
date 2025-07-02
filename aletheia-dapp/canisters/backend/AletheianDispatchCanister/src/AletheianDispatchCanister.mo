@@ -70,7 +70,9 @@ actor AletheianDispatchCanister {
     // Assign claims to Aletheians
     public shared func assignClaims() : async Result.Result<(), Text> {
         // Process each claim in the queue
-        for (claim in Iter.fromList(claimsQueue)) {
+        let processingQueue = claimsQueue;
+        claimsQueue := List.nil<Claim>(); // Clear queue first to prevent concurrent modifications
+        for (claim in Iter.fromList(processingQueue)) {
             let assigned = assignClaim(claim);
             switch (assigned) {
                 case (#ok(aletheians)) {
@@ -98,10 +100,11 @@ actor AletheianDispatchCanister {
     };
     
     // Get next claim for an Aletheian
-    public shared query ({ caller }) func getNextAssignment() : async ?Claim {
+    public shared ({ caller }) func getNextAssignment() : async ?Claim {
         // Find claims assigned to this Aletheian
         var nextClaim: ?Claim = null;
-        for (claim in Iter.fromList(claimsQueue)) {
+        let currentQueue = claimsQueue; // Capture current queue state
+        for (claim in Iter.fromList(currentQueue)) {
             switch (assignments.get(claim.id)) {
                 case (?aletheians) {
                     if (Array.find<Principal>(aletheians, func(p) { p == caller }) != null) {
@@ -151,16 +154,16 @@ actor AletheianDispatchCanister {
         };
         
         // 3. Sort by reputation (descending) and workload (ascending)
-        let sorted = Array.sort(qualified.toArray(), func(a: AletheianProfile, b: AletheianProfile): {
-            if (a.reputation > b.reputation) { #less };
-            if (a.reputation < b.reputation) { #greater };
+        let sorted = Array.sort(qualified.toArray(), func(a: AletheianProfile, b: AletheianProfile): Int {
+            if (a.reputation > b.reputation) { return -1 }; // Higher reputation first
+            if (a.reputation < b.reputation) { return 1 };
             
             let workloadA = Option.get(aletheianWorkload.get(a.id), 0);
             let workloadB = Option.get(aletheianWorkload.get(b.id), 0);
             
-            if (workloadA < workloadB) { #less };
-            if (workloadA > workloadB) { #greater };
-            #equal;
+            if (workloadA < workloadB) { return -1 }; // Lower workload first
+            if (workloadA > workloadB) { return 1 };
+            0
         });
         
         // 4. Select top 3
