@@ -13,8 +13,7 @@ actor ClaimSubmissionCanister {
   
   private let eventListeners = HashMap.HashMap<Principal, [Event -> ()]>(0, Principal.equal, Principal.hash);
   
-  public func addEventListener(listener: Event -> ()) : async () {
-    let caller = Principal.fromActor(listener);
+  public shared({ caller }) func addEventListener(listener: Event -> async ()) : async () {
     let existing = switch (eventListeners.get(caller)) {
       case (?list) list;
       case null [];
@@ -22,15 +21,20 @@ actor ClaimSubmissionCanister {
     eventListeners.put(caller, Array.append(existing, [listener]));
   };
   
-  public func removeEventListener(listener: Event -> ()) : async () {
-    let caller = Principal.fromActor(listener);
-    eventListeners.delete(caller);
+  public shared({ caller }) func removeEventListener(listener: Event -> async ()) : async () {
+    switch (eventListeners.get(caller)) {
+      case (?existing) {
+        let filtered = Array.filter(existing, func(l) = l != listener);
+        eventListeners.put(caller, filtered);
+      };
+      case null {};
+    };
   };
   
-  private func emit(event: Event) : async () {
-    for (listener in eventListeners.vals()) {
-      for (handler in listener.vals()) {
-        ignore handler(event); // Fire and forget
+  private func emit(event: Event) : () {
+    for (listeners in eventListeners.vals()) {
+      for (handler in listeners.vals()) {
+        ignore async handler(event); // Proper async fire-and-forget
       };
     };
   };
@@ -58,6 +62,10 @@ actor ClaimSubmissionCanister {
       #Completed;
     };
   };
+  
+  // Add retention limits
+  let MAX_CLAIMS_PER_USER = 1000;
+  let MAX_CLAIM_AGE = 30 * 24 * 60 * 60 * 1_000_000_000; // 30 days in nanoseconds
   
   let claims = HashMap.HashMap<ClaimId, Claim>(0, Text.equal, Text.hash);
   let userClaims = HashMap.HashMap<Principal, [ClaimId]>(0, Principal.equal, Principal.hash);
@@ -114,8 +122,9 @@ actor ClaimSubmissionCanister {
     };
     userClaims.put(caller, Array.append(currentClaims, [claimId]));
     
-    // Notify Aletheian system
-    // ... (call to AletheianDispatchCanister)
+    // Emit event and notify system
+    emit(#ClaimSubmitted(newClaim));
+    // let _ = await AletheianDispatchCanister.processClaim(newClaim); // Uncomment when interface is defined
     
     #ok(claimId)
   };
