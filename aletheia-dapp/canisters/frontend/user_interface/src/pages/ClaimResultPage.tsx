@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import FactCheckResult from '../components/FactCheckResult';
 import GlassCard from '../components/GlassCard';
 import { getClaimResult } from '../services/claims';
+import GoldButton from '../components/GoldButton';
 
 const ClaimResultPage: React.FC = () => {
   const { claimId } = useParams<{ claimId: string }>();

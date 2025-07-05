@@ -5,6 +5,7 @@ import Text "mo:base/Text";
 import Array "mo:base/Array";
 import Nat "mo:base/Nat";
 import Time "mo:base/Time";
+import Int "mo:base/Int";
 
 actor AletheianProfileCanister {
   type AletheianId = Principal;
@@ -117,7 +118,7 @@ actor AletheianProfileCanister {
   public shared ({ caller }) func updateXP(xpDelta: Int) : async Result.Result<(), Text> {
     switch (profiles.get(caller)) {
       case (?profile) {
-        let newXP = profile.xp + xpDelta;
+       let newXP: Nat = Nat.fromInt(Int.abs(profile.xp + xpDelta));
         let newRank = calculateRank(newXP);
         
         let updatedProfile: Profile = {

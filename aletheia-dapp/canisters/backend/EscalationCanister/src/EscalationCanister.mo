@@ -66,23 +66,28 @@ actor EscalationCanister {
   };
   
   // Submit senior verification
-  public shared ({ caller }) func submitSeniorVerification(
-    claimId: ClaimId,
-    verdict: Verdict,
-    explanation: Text
-  ) : async Result.Result<(), Text> {
-    switch (escalations.get(claimId)) {
-      case (?escalation) {
-        if (not Array.find<Principal>(escalation.seniorAssignments, func(p) { p == caller })) {
-          return #err("Not assigned to this escalation");
-        };
-        
-        let verification: Verification = {
-          aletheianId = caller;
-          verdict = verdict;
-          explanation = explanation;
-          submittedAt = Time.now();
-        };
+        public shared ({ caller }) func submitSeniorVerification(
+  claimId: ClaimId,
+  verdict: Verdict,
+  explanation: Text
+) : async Result.Result<(), Text> {
+  switch (escalations.get(claimId)) {
+    case (?escalation) {
+      if (not Array.find<Principal>(escalation.seniorAssignments, func(p) { 
+  switch (caller) {
+    case (?c) c == p;
+    case null false;
+  }
+})) {
+        return #err("Not assigned to this escalation");
+      };
+      
+      let verification: Verification = {
+        aletheianId = caller;
+        verdict = verdict;
+        explanation = explanation;
+        submittedAt = Time.now();
+      };
         
         let updatedVerifications = Array.append(escalation.seniorVerifications, [verification]);
         let updatedEscalation: Escalation = {

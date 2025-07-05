@@ -2,8 +2,13 @@ import Principal "mo:base/Principal";
 import HashMap "mo:base/HashMap";
 import Nat "mo:base/Nat";
 import Float "mo:base/Float";
+import Int "mo:base/Int";
 import Time "mo:base/Time";
 import Result "mo:base/Result";
+import Array "mo:base/Array";
+import Hash "mo:base/Hash";
+import Iter "mo:base/Iter";
+import Nat64 "mo:base/Nat64";
 
 actor FinanceCanister {
   type AletheianId = Principal;
@@ -25,9 +30,9 @@ actor FinanceCanister {
   };
   
   let earnings = HashMap.HashMap<AletheianId, Earnings>(0, Principal.equal, Principal.hash);
-  let paymentPool: ICP = 0;
+  var paymentPool: ICP = 0;
   let xpTotals = HashMap.HashMap<AletheianId, Nat>(0, Principal.equal, Principal.hash);
-  let monthlyTotals = HashMap.HashMap<Nat, Nat>(0, Nat.equal, Nat.hash); // Month -> Total XP
+  let monthlyTotals = HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
   
   // Update earnings based on XP
   public shared func updateEarnings(aletheianId: AletheianId, xpEarned: Nat) : async () {
@@ -56,11 +61,11 @@ actor FinanceCanister {
     );
     
     let share = if (totalSystemXP > 0) 
-      Float.fromInt(totalXP) / Float.fromInt(totalSystemXP) 
+      Float.fromIntWrap(Int.abs(Int.sub(Int.fromNat(totalXP), 0))) / Float.fromIntWrap(Int.fromNat(totalSystemXP))
       else 0.0;
     
-    let earningsICP = paymentPool * share;
-    let earningsUSD = earningsICP * currentExchangeRate(); // Would fetch from oracle
+    let earningsICP = Nat64.toNat(Nat64.fromIntWrap(Int.abs(Int.mul(Int.fromFloat(share), Int.fromNat(paymentPool)))));
+    let earningsUSD = Float.fromIntWrap(Int.abs(Int.fromNat(earningsICP))) * currentExchangeRate(); // Would fetch from oracle
     
     let updated: Earnings = {
       totalXP = totalXP;
@@ -82,16 +87,16 @@ actor FinanceCanister {
         };
         
         // In production: Transfer ICP to caller's wallet
-        let transactionId = "tx_" # Time.now().toText();
+        let transactionId = "tx_" # Int.toText(Time.now());
         
         // Update earnings
         let updated: Earnings = {
           e with
           earningsICP = e.earningsICP - amount;
           paymentHistory = Array.append(e.paymentHistory, [{
-            date = Time.now();
+            date = Int.abs(Time.now());
             amountICP = amount;
-            amountUSD = amount * currentExchangeRate();
+            amountUSD = Float.fromInt(Int.abs(Int.fromNat(amount))) * currentExchangeRate();
           }]);
         };
         
@@ -104,7 +109,7 @@ actor FinanceCanister {
   
   // Add to payment pool (called by revenue system)
   public shared func addToPool(amount: ICP) : async () {
-    paymentPool += amount;
+    paymentPool := paymentPool + amount;
   };
   
   // Internal function to get current exchange rate
@@ -113,3 +118,4 @@ actor FinanceCanister {
     30.0 // $30 per ICP
   };
 };
+

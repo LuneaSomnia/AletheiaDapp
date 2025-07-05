@@ -1,12 +1,14 @@
 import Principal "mo:base/Principal";
 import HashMap "mo:base/HashMap";
-import Array "mo:base/Array";
+import _ "mo:base/Array";
 import Nat "mo:base/Nat";
 import Int "mo:base/Int";
 import Result "mo:base/Result";
 import Text "mo:base/Text";
-import Debug "mo:base/Debug";
-import Time "mo:base/Time";
+import _ "mo:base/Debug";
+import _ "mo:base/Time";
+import Option "mo:base/Option";
+import Nat64 "mo:base/Nat64";
 
 actor ReputationLogicCanister {
     type AletheianId = Principal;
@@ -75,21 +77,20 @@ actor ReputationLogicCanister {
             case _ {};
         };
         
-        let newXP = currentXP + xpDelta;
-        xpStore.put(aletheianId, newXP);
+        let newXP = Nat64.fromIntWrap(currentXP + xpDelta);
         
         // Update performance metrics if applicable
         switch (action) {
-            case (#SuccessfulVerification) {
-                updatePerformance(aletheianId, #ClaimsVerified(1));
+                      case (#SuccessfulVerification) {
+                await updatePerformance(aletheianId, #ClaimsVerified(1));
             };
             case (#EscalationReview) {
-                updatePerformance(aletheianId, #EscalationsResolved(1));
+                await updatePerformance(aletheianId, #EscalationsResolved(1));
             };
             case _ {};
         };
         
-        #ok(newXP)
+        #ok(Nat64.toNat(newXP))
     };
     
     // Get current XP

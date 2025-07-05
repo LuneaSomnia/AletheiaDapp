@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { Actor, HttpAgent } from '@dfinity/agent';
 import { AuthClient } from '@dfinity/auth-client';
 
+
 interface User {
   principal: string;
   username?: string;
@@ -10,7 +11,6 @@ interface User {
   rank: string;
   badges: string[];
 }
-
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
@@ -24,11 +24,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authClient, setAuthClient] = useState<AuthClient | null>(null);
+  
 
   useEffect(() => {
     const initAuth = async () => {
       const client = await AuthClient.create();
       setAuthClient(client);
+
       
       if (await client.isAuthenticated()) {
         setIsAuthenticated(true);

@@ -62,9 +62,12 @@ const ProfilePage: React.FC = () => {
                 />
               </div>
               
-              <PurpleButton className="w-full py-4">
-                Update Profile
-              </PurpleButton>
+              <PurpleButton
+  className="w-full py-4"
+  onClick={() => console.log('Button clicked!')}
+>
+  Update Profile
+</PurpleButton>
             </GlassCard>
           </div>
         </div>

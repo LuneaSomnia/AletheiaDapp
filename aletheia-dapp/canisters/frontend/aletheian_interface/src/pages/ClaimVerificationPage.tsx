@@ -2,6 +2,7 @@
 import React from 'react';
 import { useParams } from 'react-router-dom';
 import VerificationInterface from '../components/VerificationInterface';
+import GlassCard from '../components/GlassCard';
 
 const ClaimVerificationPage: React.FC = () => {
   const { claimId } = useParams<{ claimId: string }>();

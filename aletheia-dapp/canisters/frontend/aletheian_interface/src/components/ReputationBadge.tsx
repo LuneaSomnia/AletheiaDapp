@@ -1,5 +1,6 @@
 // src/components/ReputationBadge.tsx
 import React from 'react';
+import GlassCard from './GlassCard';
 
 const ReputationBadge: React.FC<{ xp: number; rank: string; badges: string[] }> = ({ 
   xp, 

@@ -67,12 +67,12 @@ const ProfilePage: React.FC = () => {
               <div className="mt-8">
                 <h2 className="text-2xl font-bold text-cream mb-4">Account Security</h2>
                 <div className="space-y-4">
-                  <GoldButton className="w-full">Change Password</GoldButton>
-                  <GoldButton className="w-full bg-red-900 border-red-700">
-                    Two-Factor Authentication
+                  <GoldButton onClick={() => console.log('Button clicked')} className="w-full">Change Password</GoldButton>
+                  <GoldButton onClick={() => console.log('Button clicked')} className="w-full bg-red-900 border-red-700">
+                     Two-Factor Authentication
                   </GoldButton>
-                  <GoldButton className="w-full bg-red-900 border-red-700">
-                    Connected Wallets
+                  <GoldButton onClick={() => console.log('Button clicked')} className="w-full bg-red-900 border-red-700">
+                     Connected Wallets
                   </GoldButton>
                 </div>
               </div>

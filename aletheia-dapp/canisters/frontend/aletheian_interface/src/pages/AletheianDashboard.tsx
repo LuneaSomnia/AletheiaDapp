@@ -12,8 +12,7 @@ const AletheianDashboard: React.FC = () => {
   const { user } = useAuth();
   const [assignments, setAssignments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const navigate = useNavigate();
-
+  const navigate = useNavigate(); // Correct usage
   useEffect(() => {
     const fetchClaims = async () => {
       if (user) {
@@ -119,8 +118,18 @@ const AletheianDashboard: React.FC = () => {
               >
                 View Finance
               </PurpleButton>
-              <PurpleButton className="w-full">Check Escalations</PurpleButton>
-              <PurpleButton className="w-full">Update Profile</PurpleButton>
+              <PurpleButton 
+  className="w-full" 
+  onClick={() => navigate('/escalations')}
+>
+  Check Escalations
+</PurpleButton>
+<PurpleButton 
+  className="w-full" 
+  onClick={() => navigate('/profile/edit')}
+>
+  Update Profile
+</PurpleButton>
             </div>
           </GlassCard>
 

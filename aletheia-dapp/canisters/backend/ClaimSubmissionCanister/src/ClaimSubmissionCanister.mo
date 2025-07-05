@@ -4,6 +4,10 @@ import Text "mo:base/Text";
 import Result "mo:base/Result";
 import Time "mo:base/Time";
 import Array "mo:base/Array";
+import _ "mo:prim";
+import Iter "mo:base/Iter";
+import Int "mo:base/Int";
+
 
 actor ClaimSubmissionCanister {
   type Event = {
@@ -11,33 +15,33 @@ actor ClaimSubmissionCanister {
     #ClaimStatusUpdated : { id: ClaimId; oldStatus: {#Pending; #Processing; #Completed}; newStatus: {#Pending; #Processing; #Completed} };
   };
   
-  private let eventListeners = HashMap.HashMap<Principal, [Event -> ()]>(0, Principal.equal, Principal.hash);
-  
-  public shared({ caller }) func addEventListener(listener: Event -> async ()) : async () {
-    let existing = switch (eventListeners.get(caller)) {
-      case (?list) list;
-      case null [];
-    };
-    eventListeners.put(caller, Array.append(existing, [listener]));
+private let eventListeners = HashMap.HashMap<Principal, [shared Event -> ()]>(0, Principal.equal, Principal.hash);
+
+public shared({ caller }) func addEventListener(listener: shared Event -> ()) : async () {
+  let existing = switch (eventListeners.get(caller)) {
+    case (?list) list;
+    case null [];
   };
-  
-  public shared({ caller }) func removeEventListener(listener: Event -> async ()) : async () {
+  eventListeners.put(caller, Array.append(existing, [listener]));
+};
+
+  public shared({ caller }) func removeEventListener(listener: shared Event -> ()) : async () {
     switch (eventListeners.get(caller)) {
       case (?existing) {
-        let filtered = Array.filter(existing, func(l) = l != listener);
+        let filtered = Array.filter(existing, func(l : shared Event -> ()) : Bool = l != listener);
         eventListeners.put(caller, filtered);
       };
       case null {};
     };
   };
   
-  private func emit(event: Event) : () {
-    for (listeners in eventListeners.vals()) {
-      for (handler in listeners.vals()) {
-        ignore async handler(event); // Proper async fire-and-forget
-      };
+private func emit(event: Event ) : async () {
+  for (listeners in eventListeners.vals()) {
+    for (handler in listeners.vals()) {
+       handler(event); // Proper fire-and-forget
     };
   };
+};
   type ClaimId = Text;
   type ClaimType = {
     #Text;
@@ -101,18 +105,17 @@ actor ClaimSubmissionCanister {
       case _ {};
     };
     
-    let claimId = "claim_" # Time.now().toText();
-    let newClaim: Claim = {
-      id = claimId;
-      userId = caller;
-      content;
-      claimType;
-      source;
-      context;
-      submittedAt = Time.now();
-      status = #Pending;
-    };
-    
+let claimId = "claim_" # Int.toText(Int.abs(Time.now()));
+let newClaim: Claim = {
+  id = claimId;
+  userId = caller;
+  content;
+  claimType;
+  source;
+  context;
+  submittedAt = Int.abs(Time.now());
+  status = #Pending;
+};
     claims.put(claimId, newClaim);
     
     // Add to user's claims
@@ -123,7 +126,7 @@ actor ClaimSubmissionCanister {
     userClaims.put(caller, Array.append(currentClaims, [claimId]));
     
     // Emit event and notify system
-    emit(#ClaimSubmitted(newClaim));
+    await emit(#ClaimSubmitted(newClaim));
     // let _ = await AletheianDispatchCanister.processClaim(newClaim); // Uncomment when interface is defined
     
     #ok(claimId)
@@ -138,7 +141,7 @@ actor ClaimSubmissionCanister {
   public shared query ({ caller }) func getUserClaims(skip: Nat, limit: Nat) : async [Claim] {
     switch (userClaims.get(caller)) {
       case (?claimIds) {
-        let sliced = Array.slice(claimIds, skip, skip + limit);
+        let sliced = Iter.toArray(Array.slice(claimIds, skip, skip + limit));
         Array.mapFilter<ClaimId, Claim>(
           sliced,
           func(id) { claims.get(id) }

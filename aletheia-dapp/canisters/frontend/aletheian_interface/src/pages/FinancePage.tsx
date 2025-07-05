@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import FinanceDashboard from '../components/FinanceDashboard';
 import { useAuth } from '../services/auth';
 import { getAletheianEarnings } from '../services/finance';
+import GlassCard from '../components/GlassCard';
 
 const FinancePage: React.FC = () => {
   const { user } = useAuth();

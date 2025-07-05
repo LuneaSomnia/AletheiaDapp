@@ -6,6 +6,7 @@ import Option "mo:base/Option";
 import HashMap "mo:base/HashMap";
 import Time "mo:base/Time";
 import Debug "mo:base/Debug";
+import Nat "mo:base/Nat";
 
 actor AI_IntegrationCanister {
     type ClaimId = Text;

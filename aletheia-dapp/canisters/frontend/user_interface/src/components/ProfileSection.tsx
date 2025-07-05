@@ -62,8 +62,8 @@ const ProfileSection: React.FC<{ profile: UserProfile }> = ({ profile }) => {
           </div>
           
           <div className="flex gap-4">
-            <GoldButton className="flex-1">Edit Profile</GoldButton>
-            <GoldButton className="flex-1">Privacy Settings</GoldButton>
+           <GoldButton className="flex-1" onClick={() => console.log('Edit Profile button clicked')}>Edit Profile</GoldButton>
+<GoldButton className="flex-1" onClick={() => console.log('Privacy Settings button clicked')}>Privacy Settings</GoldButton>
           </div>
         </div>
       </div>

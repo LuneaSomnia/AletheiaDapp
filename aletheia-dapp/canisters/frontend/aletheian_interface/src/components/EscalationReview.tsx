@@ -61,9 +61,9 @@ const EscalationReview: React.FC = () => {
       </div>
       
       <div className="flex justify-end">
-        <PurpleButton className="py-4 px-8">
-          Submit Resolution
-        </PurpleButton>
+       <PurpleButton onClick={() => { /* handle click event */ }} className="py-4 px-8">
+  Submit Resolution
+</PurpleButton>
       </div>
     </GlassCard>
   );

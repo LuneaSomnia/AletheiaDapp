@@ -4,6 +4,7 @@ import Text "mo:base/Text";
 import Array "mo:base/Array";
 import Result "mo:base/Result";
 import Time "mo:base/Time";
+import Iter "mo:base/Iter";
 
 actor FactLedgerCanister {
   type ClaimId = Text;
@@ -99,11 +100,11 @@ actor FactLedgerCanister {
   };
   
   // Search for facts
-  public shared query func searchClaims(query: Text) : async [FactRecord] {
+  public shared query func searchClaims(searchquery: Text) : async [FactRecord] {
     // Simplified implementation - would use full-text search in production
     Array.filter<FactRecord>(
       Iter.toArray(facts.vals()),
-      func(record) { Text.contains(record.claim, #text query) }
+      func(record) { Text.contains(record.claim, #text searchquery) }
     )
   };
 };

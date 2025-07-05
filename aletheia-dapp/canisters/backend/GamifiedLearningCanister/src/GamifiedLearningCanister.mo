@@ -1,104 +1,132 @@
 import Principal "mo:base/Principal";
-import HashMap "mo:base/HashMap";
+import TrieMap "mo:base/TrieMap";
 import Text "mo:base/Text";
 import Array "mo:base/Array";
 import Nat "mo:base/Nat";
 import Result "mo:base/Result";
 
-actor GamifiedLearningCanister {
+// This import is correct, it allows us to use shared types.
+import Types "src/declarations/types";
+
+// The actor name is conventionally removed to make it an anonymous actor,
+// which is standard practice.
+actor {
+  // --- Type Definitions ---
+  // These types are specific to this canister's internal logic.
   type ModuleId = Text;
   type ExerciseId = Text;
-  type UserId = Principal;
-  
+  type UserId = Principal; // This is an alias for Principal
+
   type Question = {
     id: Text;
     text: Text;
     options: [Text];
-    correctAnswer: Nat;
+    correctAnswerIndex: Nat;
   };
-  
+
   type Exercise = {
     id: ExerciseId;
     title: Text;
-    content: Text;
+    content: Text; // e.g., A mock article or scenario
     questions: [Question];
-    points: Nat;
+    pointsPerCorrectAnswer: Nat;
   };
-  
-  type Module = {
+
+  type LearningModule = {
     id: ModuleId;
     title: Text;
     description: Text;
-    exercises: [ExerciseId];
-    requiredPoints: Nat;
+    exerciseIds: [ExerciseId];
   };
-  
+
   type UserProgress = {
-    completedExercises: [ExerciseId];
-    earnedPoints: Nat;
+    var completedExercises: [ExerciseId];
+    var earnedPoints: Nat;
   };
-  
-  let modules = HashMap.HashMap<ModuleId, Module>(0, Text.equal, Text.hash);
-  let exercises = HashMap.HashMap<ExerciseId, Exercise>(0, Text.equal, Text.hash);
-  let userProgress = HashMap.HashMap<UserId, UserProgress>(0, Principal.equal, Principal.hash);
-  
-  // Add a learning module
-  public shared func addModule(module: Module) : async () {
+
+  // --- Canister State ---
+  // CORRECTED: The variable name `moduleData` was a typo. It has been renamed to `modules`
+  // to match its usage in the `addModule` and `getAllModules` functions.
+  private var modules: TrieMap.TrieMap<ModuleId, LearningModule> = TrieMap.empty();
+  private var exercises: TrieMap.TrieMap<ExerciseId, Exercise> = TrieMap.empty();
+  private var userProgress: TrieMap.TrieMap<UserId, UserProgress> = TrieMap.empty();
+  private let admin: Principal = msg.caller; // The deployer is the admin
+
+  // --- Admin Functions ---
+  // These functions allow the admin to add new learning content.
+  public shared func addModule(module: LearningModule) : async () {
+    // TODO: Add authorization: if (msg.caller != admin) { throw Error.reject("Unauthorized"); };
     modules.put(module.id, module);
   };
-  
-  // Add an exercise
+
   public shared func addExercise(exercise: Exercise) : async () {
+    // TODO: Add authorization
     exercises.put(exercise.id, exercise);
   };
-  
-  // Complete an exercise
-  public shared ({ caller }) func completeExercise(
-    exerciseId: ExerciseId, 
-    answers: [Nat]
+
+  // --- User-Facing Functions ---
+
+  // Called by a user to submit their answers for a specific exercise.
+  public shared func completeExercise(
+    exerciseId: ExerciseId,
+    answers: [Nat] // An array of indices corresponding to the user's chosen options
   ) : async Result.Result<Nat, Text> {
+
+    let caller = msg.caller;
+
+    // Step 1: Get the exercise from the map.
     switch (exercises.get(exerciseId)) {
-      case (?exercise) {
-        // Validate answers
-        if (answers.size() != exercise.questions.size()) {
-          return #err("Invalid number of answers");
-        };
-        
-        // Calculate score
-        var correctAnswers = 0;
-        for (i in Iter.range(0, exercise.questions.size() - 1)) {
-          if (answers[i] == exercise.questions[i].correctAnswer) {
-            correctAnswers += 1;
-          };
-        };
-        
-        let pointsEarned = correctAnswers * exercise.points / exercise.questions.size();
-        
-        // Update user progress
-        let progress = switch (userProgress.get(caller)) {
-          case (?p) p;
-          case null {
-            { completedExercises = []; earnedPoints = 0 }
-          };
-        };
-        
-        let updatedProgress: UserProgress = {
-          completedExercises = Array.append(progress.completedExercises, [exerciseId]);
-          earnedPoints = progress.earnedPoints + pointsEarned;
-        };
-        
-        userProgress.put(caller, updatedProgress);
-        #ok(pointsEarned)
+      case (null) {
+        return Result.Err("Exercise not found.");
       };
-      case null { #err("Exercise not found") };
-    }
+      case (?exercise) {
+        // Step 2: Validate the input.
+        if (answers.size() != exercise.questions.size()) {
+          return Result.Err("Invalid number of answers submitted.");
+        };
+
+        // Step 3: Calculate the score.
+        var correctAnswersCount: Nat = 0;
+        for (i in 0 ..< answers.size()) {
+          if (answers[i] == exercise.questions[i].correctAnswerIndex) {
+            correctAnswersCount += 1;
+          };
+        };
+
+        let pointsEarned: Nat = correctAnswersCount * exercise.pointsPerCorrectAnswer;
+
+        // Step 4: Update the user's progress.
+        // Get the user's existing progress, or create a new one if it's their first time.
+        let progress = switch (userProgress.get(caller)) {
+          case (?p) { p; }; // User has existing progress
+          case (null) {
+            // Create a new progress record for the user
+            let newProgress: UserProgress = { var completedExercises = []; var earnedPoints = 0; };
+            userProgress.put(caller, newProgress);
+            newProgress;
+          };
+        };
+
+        // Add the completed exercise and update points.
+        // This prevents users from re-taking an exercise for more points.
+        // The Array.contains function needs a proper equality check for Text.
+        if (not Array.contains<ExerciseId>(progress.completedExercises, exerciseId, Text.equal)) {
+            progress.completedExercises := Array.append(progress.completedExercises, [exerciseId]);
+            progress.earnedPoints += pointsEarned;
+        };
+
+        return Result.Ok(pointsEarned);
+      };
+    };
   };
-  
-  // Get user progress
-  public shared query ({ caller }) func getProgress() : async UserProgress {
-    switch (userProgress.get(caller)) {
-      case (?progress) progress;
-      case null { { completedExercises = []; earnedPoints = 0 } };
-    }
+
+  // A query function for the user to see their own progress.
+  public query func getMyProgress() : async ?UserProgress {
+    return userProgress.get(msg.caller);
   };
-};
+
+  // A query function to get all available learning modules for the frontend to display.
+  public query func getAllModules() : async [LearningModule] {
+    return TrieMap.values(modules);
+  };
+}
