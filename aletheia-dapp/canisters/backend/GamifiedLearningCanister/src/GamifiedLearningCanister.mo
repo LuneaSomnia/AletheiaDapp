@@ -6,7 +6,7 @@ import Nat "mo:base/Nat";
 import Result "mo:base/Result";
 
 // This import is correct, it allows us to use shared types.
-import Types "src/declarations/types";
+import Types "aletheia-dapp/canisters/frontend/user_interface/src/declarations/types/Types";
 
 // The actor name is conventionally removed to make it an anonymous actor,
 // which is standard practice.
@@ -54,10 +54,10 @@ actor {
 
   // --- Admin Functions ---
   // These functions allow the admin to add new learning content.
-  public shared func addModule(module: LearningModule) : async () {
-    // TODO: Add authorization: if (msg.caller != admin) { throw Error.reject("Unauthorized"); };
-    modules.put(module.id, module);
-  };
+  public shared func addModule(learningModule: LearningModule) : async () {
+  // TODO: Add authorization: if (msg.caller != admin) { throw Error.reject("Unauthorized"); };
+  modules.put(learningModule.id, learningModule);
+};
 
   public shared func addExercise(exercise: Exercise) : async () {
     // TODO: Add authorization

@@ -21,51 +21,51 @@
       "type": "assets"
     },
     "UserAccountCanister": {
-      "main": "src/backend/UserAccountCanister/main.mo",
+      "main": "canisters/backend/UserAccountCanister/src/UserAccountCanister.mo",
       "type": "motoko"
     },
     "AletheianProfileCanister": {
-      "main": "src/backend/AletheianProfileCanister/main.mo",
+      "main": "canisters/backend/AletheianProfileCanister/src/AletheianProfileCanister.mo",
       "type": "motoko"
     },
     "FactLedgerCanister": {
-      "main": "src/backend/FactLedgerCanister/main.mo",
+      "main": "canisters/backend/FactLedgerCanister/src/FactLedgerCanister.mo",
       "type": "motoko"
     },
     "ReputationLogicCanister": {
-      "main": "src/backend/ReputationLogicCanister/main.mo",
+      "main": "canisters/backend/ReputationLogicCanister/src/ReputationLogicCanister.mo",
       "type": "motoko"
     },
     "ClaimSubmissionCanister": {
-      "main": "src/backend/ClaimSubmissionCanister/main.mo",
+      "main": "canisters/backend/ClaimSubmissionCanister/src/ClaimSubmissionCanister.mo",
       "type": "motoko"
     },
     "AI_IntegrationCanister": {
-      "main": "src/backend/AI_IntegrationCanister/main.mo",
+      "main": "canisters/backend/AI_IntegrationCanister/src/AI_IntegrationCanister.mo",
       "type": "motoko"
     },
     "AletheianDispatchCanister": {
-      "main": "src/backend/AletheianDispatchCanister/main.mo",
+      "main": "canisters/backend/AletheianDispatchCanister/src/AletheianDispatchCanister.mo",
       "type": "motoko"
     },
     "VerificationWorkflowCanister": {
-      "main": "src/backend/VerificationWorkflowCanister/main.mo",
+      "main": "canisters/backend/VerificationWorkflowCanister/src/VerificationWorkflowCanister.mo",
       "type": "motoko"
     },
     "EscalationCanister": {
-      "main": "src/backend/EscalationCanister/main.mo",
+      "main": "canisters/backend/EscalationCanister/src/EscalationCanister.mo",
       "type": "motoko"
     },
     "FinanceCanister": {
-      "main": "src/backend/FinanceCanister/main.mo",
+      "main": "canisters/backend/FinanceCanister/src/FinanceCanister.mo",
       "type": "motoko"
     },
     "GamifiedLearningCanister": {
-      "main": "src/backend/GamifiedLearningCanister/main.mo",
+      "main": "canisters/backend/GamifiedLearningCanister/src/GamifiedLearningCanister.mo",
       "type": "motoko"
     },
     "NotificationCanister": {
-      "main": "src/backend/NotificationCanister/main.mo",
+      "main": "canisters/backend/NotificationCanister/src/NotificationCanister.mo",
       "type": "motoko"
     }
   },

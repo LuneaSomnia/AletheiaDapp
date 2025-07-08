@@ -6,6 +6,7 @@ import Array "mo:base/Array";
 import Nat "mo:base/Nat";
 import Time "mo:base/Time";
 import Int "mo:base/Int";
+import Nat64 "mo:base/Nat64";
 
 actor AletheianProfileCanister {
   type AletheianId = Principal;
@@ -116,24 +117,26 @@ actor AletheianProfileCanister {
   
   // Update XP and rank
   public shared ({ caller }) func updateXP(xpDelta: Int) : async Result.Result<(), Text> {
-    switch (profiles.get(caller)) {
-      case (?profile) {
-       let newXP: Nat = Nat.fromInt(Int.abs(profile.xp + xpDelta));
-        let newRank = calculateRank(newXP);
-        
-        let updatedProfile: Profile = {
-          profile with 
-          xp = newXP;
-          rank = newRank;
-          lastActive = Time.now();
-        };
-        
-        profiles.put(caller, updatedProfile);
-        #ok(())
+  switch (profiles.get(caller)) {
+    case (?profile) {
+      let newXP: Nat = Nat64.toNat(Nat64.fromIntWrap(Int.abs(xpDelta)));
+      
+      let newRank = calculateRank(newXP);
+
+      let updatedProfile: Profile = {
+        profile with 
+        xp = newXP;
+        rank = newRank;
+        lastActive = Time.now();
       };
-      case null { #err("Profile not found") };
-    }
-  };
+
+      profiles.put(caller, updatedProfile);
+      #ok(())
+    };
+    case null { #err("Profile not found") };
+  }
+};
+
   
   // Add a badge
   public shared ({ caller }) func addBadge(badge: Badge) : async Result.Result<(), Text> {

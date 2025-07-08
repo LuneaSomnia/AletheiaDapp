@@ -1,121 +1,113 @@
 import Principal "mo:base/Principal";
-import HashMap "mo:base/HashMap";
+import TrieMap "mo:base/TrieMap";
 import Nat "mo:base/Nat";
-import Float "mo:base/Float";
 import Int "mo:base/Int";
 import Time "mo:base/Time";
 import Result "mo:base/Result";
 import Array "mo:base/Array";
-import Hash "mo:base/Hash";
-import Iter "mo:base/Iter";
-import Nat64 "mo:base/Nat64";
 
-actor FinanceCanister {
+actor {
+  // --- Type Definitions ---
   type AletheianId = Principal;
-  type ICP = Nat;
-  type USD = Float;
-  
+  type ICP = Nat;    // Using Nat for ICP (e.g., smallest unit like e8s)
+  type USD = Nat;    // Using Nat for USD cents to avoid floating-point errors
+
+
   type Payment = {
-    date: Int;
+    date: Time.Time;
     amountICP: ICP;
     amountUSD: USD;
   };
-  
+
   type Earnings = {
-    totalXP: Nat;
-    monthlyXP: Nat;
-    earningsICP: ICP;
-    earningsUSD: USD;
-    paymentHistory: [Payment];
+    var totalXP: Nat;
+    var monthlyXP: Nat;
+    var earningsICP: ICP;
+    var earningsUSD: USD;
+    var paymentHistory: [Payment];
   };
-  
-  let earnings = HashMap.HashMap<AletheianId, Earnings>(0, Principal.equal, Principal.hash);
-  var paymentPool: ICP = 0;
-  let xpTotals = HashMap.HashMap<AletheianId, Nat>(0, Principal.equal, Principal.hash);
-  let monthlyTotals = HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
-  
-  // Update earnings based on XP
-  public shared func updateEarnings(aletheianId: AletheianId, xpEarned: Nat) : async () {
-    let current = switch (earnings.get(aletheianId)) {
+
+  // --- Canister State ---
+  private var earnings: TrieMap.TrieMap<AletheianId, Earnings> = TrieMap.TrieMap(
+    Principal.equal,
+    Principal.hash
+  );
+
+  private var totalSystemXP: Nat = 0;
+  private var paymentPool: ICP = 0;
+  private let icpToUSDCentsRate: Nat = 3000; // $30.00
+
+  // --- Record earned XP ---
+  public shared func recordXp(aletheianId: AletheianId, xpEarned: Nat) : async () {
+    let aletheianEarnings = switch (earnings.get(aletheianId)) {
       case (?e) e;
       case null {
-        {
-          totalXP = 0;
-          monthlyXP = 0;
-          earningsICP = 0;
-          earningsUSD = 0.0;
-          paymentHistory = [];
-        }
+        let newRecord : Earnings = {
+          var totalXP = 0;
+          var monthlyXP = 0;
+          var earningsICP = 0;
+          var earningsUSD = 0;
+          var paymentHistory = [];
+        };
+        earnings.put(aletheianId, newRecord);
+        newRecord;
       };
     };
-    
-    let totalXP = current.totalXP + xpEarned;
-    let monthlyXP = current.monthlyXP + xpEarned;
-    
-    // Update XP totals
-    xpTotals.put(aletheianId, totalXP);
-    
-    // Calculate new earnings
-    let totalSystemXP = Array.foldLeft<Nat, Nat>(
-      Iter.toArray(xpTotals.vals()), 0, func(acc, xp) { acc + xp }
-    );
-    
-    let share = if (totalSystemXP > 0) 
-      Float.fromIntWrap(Int.abs(Int.sub(Int.fromNat(totalXP), 0))) / Float.fromIntWrap(Int.fromNat(totalSystemXP))
-      else 0.0;
-    
-    let earningsICP = Nat64.toNat(Nat64.fromIntWrap(Int.abs(Int.mul(Int.fromFloat(share), Int.fromNat(paymentPool)))));
-    let earningsUSD = Float.fromIntWrap(Int.abs(Int.fromNat(earningsICP))) * currentExchangeRate(); // Would fetch from oracle
-    
-    let updated: Earnings = {
-      totalXP = totalXP;
-      monthlyXP = monthlyXP;
-      earningsICP = earningsICP;
-      earningsUSD = earningsUSD;
-      paymentHistory = current.paymentHistory;
-    };
-    
-    earnings.put(aletheianId, updated);
+
+    aletheianEarnings.totalXP += xpEarned;
+    aletheianEarnings.monthlyXP += xpEarned;
+    totalSystemXP += xpEarned;
   };
-  
-  // Withdraw earnings
+
+  // --- Distribute payment pool ---
+  public shared func distributePaymentPool() : async () {
+    if (paymentPool == 0 or totalSystemXP == 0) return;
+
+    for ((aletheianId, aletheianEarnings) in earnings.entries()) {
+      if (aletheianEarnings.totalXP > 0) {
+        let share: ICP = (paymentPool * aletheianEarnings.totalXP) / totalSystemXP;
+        aletheianEarnings.earningsICP += share;
+        aletheianEarnings.earningsUSD += share * icpToUSDCentsRate;
+      };
+    };
+
+    paymentPool := 0;
+    totalSystemXP := 0;
+  };
+
+  // --- Withdraw earnings ---
   public shared ({ caller }) func withdraw(amount: ICP) : async Result.Result<Text, Text> {
     switch (earnings.get(caller)) {
-      case (?e) {
-        if (amount > e.earningsICP) {
-          return #err("Insufficient funds");
-        };
-        
-        // In production: Transfer ICP to caller's wallet
-        let transactionId = "tx_" # Int.toText(Time.now());
-        
-        // Update earnings
-        let updated: Earnings = {
-          e with
-          earningsICP = e.earningsICP - amount;
-          paymentHistory = Array.append(e.paymentHistory, [{
-            date = Int.abs(Time.now());
-            amountICP = amount;
-            amountUSD = Float.fromInt(Int.abs(Int.fromNat(amount))) * currentExchangeRate();
-          }]);
-        };
-        
-        earnings.put(caller, updated);
-        #ok(transactionId)
+      case null {
+        return #err("No earnings record found.");
       };
-      case null { #err("No earnings record found") };
-    }
+      case (?earningRecord) {
+        if (amount > earningRecord.earningsICP) {
+          return #err("Insufficient funds.");
+        };
+
+        earningRecord.earningsICP -= amount;
+        let amountUSD = amount * icpToUSDCentsRate;
+        earningRecord.earningsUSD -= amountUSD;
+
+
+        let newPayment: Payment = {
+          date = Time.now();
+          amountICP = amount;
+          amountUSD = amountUSD;
+        };
+
+        earningRecord.paymentHistory := Array.append(earningRecord.paymentHistory, [newPayment]);
+
+        let txId = "tx_" # Nat.toText(Int.abs(Time.now()));
+
+        return #ok(txId);
+      };
+    };
   };
-  
-  // Add to payment pool (called by revenue system)
+
+  // --- Add funds to the payment pool ---
   public shared func addToPool(amount: ICP) : async () {
-    paymentPool := paymentPool + amount;
-  };
-  
-  // Internal function to get current exchange rate
-  func currentExchangeRate() : Float {
-    // Would fetch from an oracle in production
-    30.0 // $30 per ICP
+    paymentPool += amount;
   };
 };
-

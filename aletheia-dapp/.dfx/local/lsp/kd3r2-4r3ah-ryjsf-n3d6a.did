@@ -1,0 +1,56 @@
+type Result = 
+ variant {
+   err: text;
+   ok: ClaimId;
+ };
+type Event = 
+ variant {
+   ClaimStatusUpdated:
+    record {
+      id: ClaimId;
+      newStatus: variant {
+                   Completed;
+                   Pending;
+                   Processing;
+                 };
+      oldStatus: variant {
+                   Completed;
+                   Pending;
+                   Processing;
+                 };
+    };
+   ClaimSubmitted: Claim;
+ };
+type ClaimType = 
+ variant {
+   Audio;
+   Image;
+   Link;
+   Text;
+   Url;
+   Video;
+ };
+type ClaimId = text;
+type Claim = 
+ record {
+   claimType: ClaimType;
+   content: text;
+   context: opt text;
+   id: ClaimId;
+   source: opt text;
+   status: variant {
+             Completed;
+             Pending;
+             Processing;
+           };
+   submittedAt: int;
+   userId: principal;
+ };
+service : {
+  addEventListener: (listener: func (Event) -> () oneway) -> ();
+  getClaim: (claimId: ClaimId) -> (opt Claim) query;
+  getUserClaims: (skip: nat, limit: nat) -> (vec Claim) query;
+  removeEventListener: (listener: func (Event) -> () oneway) -> ();
+  submitClaim: (content: text, claimType: ClaimType, source: opt text,
+   context: opt text) -> (Result);
+}

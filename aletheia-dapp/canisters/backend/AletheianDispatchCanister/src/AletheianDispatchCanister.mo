@@ -114,4 +114,5 @@ actor AletheianDispatchCanister {
       case (?workload) #ok(workload);
       case null #err("Aletheian not found");
     }
-  };
+  }
+}
