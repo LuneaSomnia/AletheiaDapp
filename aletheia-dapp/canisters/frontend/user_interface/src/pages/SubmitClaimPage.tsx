@@ -5,6 +5,7 @@ import ClaimForm from '../components/ClaimForm';
 import QuestionMirror from '../components/QuestionMirror';
 import GlassCard from '../components/GlassCard';
 import GoldButton from '../components/GoldButton';
+import { submitClaim } from '../services/claims';
 
 const SubmitClaimPage: React.FC = () => {
   const [submissionResult, setSubmissionResult] = useState<{ claimId: string; questions: string[] } | null>(null);
@@ -12,22 +13,22 @@ const SubmitClaimPage: React.FC = () => {
   const navigate = useNavigate();
 
   const handleSubmit = async (
-    claim: string, 
-    claimType: string, 
-    source?: string, 
-    context?: string
-  ) => {
-    const result = await ClaimForm.handleSubmit();
-    if (result) {
-      setSubmissionResult(result);
-    }
-  };
+  claim: string, 
+  claimType: string, 
+  source?: string, 
+  context?: string
+) => {
+  const result = await submitClaim(claim, claimType, source, context);
+  if (result) {
+    setSubmissionResult(result);
+  }
+};
 
-  return (
-    <div className="min-h-screen p-4">
-      <div className="max-w-4xl mx-auto">
-        {!submissionResult ? (
-          <ClaimForm onSubmit={handleSubmit} />
+return (
+  <div className="min-h-screen p-4">
+    <div className="max-w-4xl mx-auto">
+      {!submissionResult ? (
+        <ClaimForm />
         ) : (
           <div className="space-y-8">
             <GlassCard className="p-8 text-center">

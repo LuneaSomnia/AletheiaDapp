@@ -1,1 +1,20 @@
 .aider*
+# Ignore DFX and build artifacts
+.dfx/
+declarations/
+node_modules/
+*.wasm
+*.wasm.gz
+*.js.map
+*.tsbuildinfo
+
+# VS Code specific
+.vscode/
+*.log
+dist/
+out/
+.env
+node_modules
+node_modules
+node_modules
+node_modules

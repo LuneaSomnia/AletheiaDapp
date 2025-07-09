@@ -1,1 +1,22 @@
 .aider*
+# DFINITY/DFX
+.dfx/
+declarations/
+
+# Node
+node_modules/
+
+# Build artifacts
+*.wasm
+*.wasm.gz
+*.js.map
+*.tsbuildinfo
+dist/
+out/
+
+# Logs and IDEs
+*.log
+.vscode/
+
+# Environment files
+.env

@@ -1,5 +1,19 @@
 {
-  "canisters": {
+ "canisters": {
+     "Main": {
+      "main": "src/Main.mo",
+      "candid": "src/Main.did",
+      "package": "src/Main.did",
+      "type": "motoko",
+      "dependencies": [
+        "UserAccountCanister",
+        "ClaimSubmissionCanister",
+        "AletheianDispatchCanister",
+        "VerificationWorkflowCanister",
+        "FactLedgerCanister",
+        "NotificationCanister"
+      ]
+    },
     "user_interface": {
       "frontend": {
         "entrypoint": "canisters/frontend/user_interface/src/index.html"

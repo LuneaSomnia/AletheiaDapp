@@ -6,7 +6,7 @@ import Nat "mo:base/Nat";
 import Result "mo:base/Result";
 
 // This import is correct, it allows us to use shared types.
-import Types "aletheia-dapp/canisters/frontend/user_interface/src/declarations/types/Types";
+import Types "../../../../../frontend/user_interface/src/declarations/types";
 
 // The actor name is conventionally removed to make it an anonymous actor,
 // which is standard practice.
