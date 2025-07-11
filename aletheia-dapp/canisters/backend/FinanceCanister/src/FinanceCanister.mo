@@ -1,113 +1,103 @@
+import HashMap "mo:base/HashMap";
 import Principal "mo:base/Principal";
-import TrieMap "mo:base/TrieMap";
 import Nat "mo:base/Nat";
-import Int "mo:base/Int";
+import Float "mo:base/Float";
 import Time "mo:base/Time";
 import Result "mo:base/Result";
-import Array "mo:base/Array";
+import DIP20 "canister:DIP20Token"; // Updated import
+import ReputationLogic "canister:ReputationLogic";
 
 actor {
-  // --- Type Definitions ---
   type AletheianId = Principal;
-  type ICP = Nat;    // Using Nat for ICP (e.g., smallest unit like e8s)
-  type USD = Nat;    // Using Nat for USD cents to avoid floating-point errors
-
-
-  type Payment = {
-    date: Time.Time;
-    amountICP: ICP;
-    amountUSD: USD;
+  type Token = { #ICP; #USD };
+  
+  private var monthlyRevenue : Nat = 0;
+  private var revenuePool : Nat = 0;
+  private var lastPayout : Time.Time = 0;
+  
+  private let aletheianBalances = HashMap.HashMap<AletheianId, Nat>(0, Principal.equal, Principal.hash);
+  
+  // Set monthly revenue (called by admin)
+  public shared ({ caller }) func setMonthlyRevenue(amount : Nat) : async () {
+    // Add authentication in production
+    monthlyRevenue := amount;
+    revenuePool += amount;
   };
-
-  type Earnings = {
-    var totalXP: Nat;
-    var monthlyXP: Nat;
-    var earningsICP: ICP;
-    var earningsUSD: USD;
-    var paymentHistory: [Payment];
-  };
-
-  // --- Canister State ---
-  private var earnings: TrieMap.TrieMap<AletheianId, Earnings> = TrieMap.TrieMap(
-    Principal.equal,
-    Principal.hash
-  );
-
-  private var totalSystemXP: Nat = 0;
-  private var paymentPool: ICP = 0;
-  private let icpToUSDCentsRate: Nat = 3000; // $30.00
-
-  // --- Record earned XP ---
-  public shared func recordXp(aletheianId: AletheianId, xpEarned: Nat) : async () {
-    let aletheianEarnings = switch (earnings.get(aletheianId)) {
-      case (?e) e;
-      case null {
-        let newRecord : Earnings = {
-          var totalXP = 0;
-          var monthlyXP = 0;
-          var earningsICP = 0;
-          var earningsUSD = 0;
-          var paymentHistory = [];
+  
+  // Run monthly payout to Aletheians
+  public shared func runMonthlyPayout() : async Result.Result<Text, Text> {
+    if (revenuePool == 0) {
+      return #err("No revenue available for payout");
+    };
+    
+    let totalXP = await ReputationLogic.getTotalMonthlyXP();
+    if (totalXP == 0) {
+      return #err("No XP earned this month");
+    };
+    
+    let xpValue = Float.fromInt(revenuePool) / Float.fromInt(totalXP);
+    let aletheians = await ReputationLogic.getActiveAletheians();
+    
+    var totalDistributed = 0;
+    var successCount = 0;
+    var failCount = 0;
+    
+    for (aletheian in aletheians.vals()) {
+      let xp = await ReputationLogic.getMonthlyXP(aletheian);
+      let amount = Float.toInt(Float.fromInt(xp) * xpValue);
+      
+      if (amount > 0) {
+        switch (await transferToAletheian(aletheian, amount)) {
+          case (#ok) {
+            totalDistributed += amount;
+            successCount += 1;
+          };
+          case (#err(msg)) {
+            failCount += 1;
+            // Log error
+          };
         };
-        earnings.put(aletheianId, newRecord);
-        newRecord;
       };
     };
-
-    aletheianEarnings.totalXP += xpEarned;
-    aletheianEarnings.monthlyXP += xpEarned;
-    totalSystemXP += xpEarned;
+    
+    revenuePool -= totalDistributed;
+    lastPayout := Time.now();
+    
+    #ok("Distributed " # Nat.toText(totalDistributed) # " tokens to " 
+      # Nat.toText(successCount) # " Aletheians. " 
+      # Nat.toText(failCount) # " failed transfers.");
   };
-
-  // --- Distribute payment pool ---
-  public shared func distributePaymentPool() : async () {
-    if (paymentPool == 0 or totalSystemXP == 0) return;
-
-    for ((aletheianId, aletheianEarnings) in earnings.entries()) {
-      if (aletheianEarnings.totalXP > 0) {
-        let share: ICP = (paymentPool * aletheianEarnings.totalXP) / totalSystemXP;
-        aletheianEarnings.earningsICP += share;
-        aletheianEarnings.earningsUSD += share * icpToUSDCentsRate;
+  
+  private func transferToAletheian(aletheian : Principal, amount : Nat) : async Result.Result<(), Text> {
+    try {
+      let transferResult = await DIP20.transfer(aletheian, amount);
+      switch (transferResult) {
+        case (#Ok(index)) { #ok() };
+        case (#Err(err)) { #err("Transfer error: " # err) };
       };
-    };
-
-    paymentPool := 0;
-    totalSystemXP := 0;
-  };
-
-  // --- Withdraw earnings ---
-  public shared ({ caller }) func withdraw(amount: ICP) : async Result.Result<Text, Text> {
-    switch (earnings.get(caller)) {
-      case null {
-        return #err("No earnings record found.");
-      };
-      case (?earningRecord) {
-        if (amount > earningRecord.earningsICP) {
-          return #err("Insufficient funds.");
-        };
-
-        earningRecord.earningsICP -= amount;
-        let amountUSD = amount * icpToUSDCentsRate;
-        earningRecord.earningsUSD -= amountUSD;
-
-
-        let newPayment: Payment = {
-          date = Time.now();
-          amountICP = amount;
-          amountUSD = amountUSD;
-        };
-
-        earningRecord.paymentHistory := Array.append(earningRecord.paymentHistory, [newPayment]);
-
-        let txId = "tx_" # Nat.toText(Int.abs(Time.now()));
-
-        return #ok(txId);
-      };
+    } catch (e) {
+      #err("Exception: " # Error.message(e));
     };
   };
-
-  // --- Add funds to the payment pool ---
-  public shared func addToPool(amount: ICP) : async () {
-    paymentPool += amount;
+  
+  // Withdraw funds for Aletheian
+  public shared ({ caller }) func withdraw(amount : Nat) : async Result.Result<Nat, Text> {
+    switch (aletheianBalances.get(caller)) {
+      case (null) { #err("No balance available") };
+      case (?balance) {
+        if (balance < amount) {
+          #err("Insufficient balance");
+        } else {
+          switch (await transferToAletheian(caller, amount)) {
+            case (#ok) {
+              let newBalance = balance - amount;
+              aletheianBalances.put(caller, newBalance);
+              #ok(newBalance);
+            };
+            case (#err(msg)) { #err(msg) };
+          };
+        };
+      };
+    };
   };
 };

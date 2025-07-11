@@ -1,132 +1,168 @@
 import Principal "mo:base/Principal";
-import TrieMap "mo:base/TrieMap";
+import HashMap "mo:base/HashMap";
+import Nat "mo:base/Nat";
+import Float "mo:base/Float";
 import Text "mo:base/Text";
 import Array "mo:base/Array";
-import Nat "mo:base/Nat";
-import Result "mo:base/Result";
+import AI_Integration "canister:AI_Integration";
+import UserAccount "canister:UserAccount";
 
-// This import is correct, it allows us to use shared types.
-import Types "../../../../../frontend/user_interface/src/declarations/types";
-
-// The actor name is conventionally removed to make it an anonymous actor,
-// which is standard practice.
 actor {
-  // --- Type Definitions ---
-  // These types are specific to this canister's internal logic.
-  type ModuleId = Text;
-  type ExerciseId = Text;
-  type UserId = Principal; // This is an alias for Principal
-
-  type Question = {
-    id: Text;
-    text: Text;
-    options: [Text];
-    correctAnswerIndex: Nat;
-  };
-
-  type Exercise = {
-    id: ExerciseId;
-    title: Text;
-    content: Text; // e.g., A mock article or scenario
-    questions: [Question];
-    pointsPerCorrectAnswer: Nat;
-  };
-
+  type ModuleId = Nat;
+  type UserId = Principal;
+  
   type LearningModule = {
-    id: ModuleId;
-    title: Text;
-    description: Text;
-    exerciseIds: [ExerciseId];
+    id : ModuleId;
+    title : Text;
+    content : Text;
+    difficulty : Nat; // 1-5 scale
+    topic : Text;
+    questions : [Question];
   };
-
+  
+  type Question = {
+    text : Text;
+    options : [Text];
+    correctIndex : Nat;
+    explanation : Text;
+  };
+  
   type UserProgress = {
-    var completedExercises: [ExerciseId];
-    var earnedPoints: Nat;
+    completedModules : [ModuleId];
+    currentModule : ?ModuleId;
+    totalXP : Nat;
+    subscriptionCredit : Float; // Percentage discount
   };
-
-  // --- Canister State ---
-  // CORRECTED: The variable name `moduleData` was a typo. It has been renamed to `modules`
-  // to match its usage in the `addModule` and `getAllModules` functions.
-  private var modules: TrieMap.TrieMap<ModuleId, LearningModule> = TrieMap.empty();
-  private var exercises: TrieMap.TrieMap<ExerciseId, Exercise> = TrieMap.empty();
-  private var userProgress: TrieMap.TrieMap<UserId, UserProgress> = TrieMap.empty();
-  private let admin: Principal = msg.caller; // The deployer is the admin
-
-  // --- Admin Functions ---
-  // These functions allow the admin to add new learning content.
-  public shared func addModule(learningModule: LearningModule) : async () {
-  // TODO: Add authorization: if (msg.caller != admin) { throw Error.reject("Unauthorized"); };
-  modules.put(learningModule.id, learningModule);
-};
-
-  public shared func addExercise(exercise: Exercise) : async () {
-    // TODO: Add authorization
-    exercises.put(exercise.id, exercise);
+  
+  private var nextModuleId : ModuleId = 1;
+  private let modules = HashMap.HashMap<ModuleId, LearningModule>(0, Nat.equal, Hash.hash);
+  private let userProgress = HashMap.HashMap<UserId, UserProgress>(0, Principal.equal, Principal.hash);
+  
+  // Create a new learning module
+  public shared ({ caller }) func createModule(title : Text, content : Text, difficulty : Nat, topic : Text) : async ModuleId {
+    let moduleId = nextModuleId;
+    nextModuleId += 1;
+    
+    let newModule : LearningModule = {
+      id = moduleId;
+      title = title;
+      content = content;
+      difficulty = difficulty;
+      topic = topic;
+      questions = generateQuestions(content);
+    };
+    
+    modules.put(moduleId, newModule);
+    moduleId;
   };
-
-  // --- User-Facing Functions ---
-
-  // Called by a user to submit their answers for a specific exercise.
-  public shared func completeExercise(
-    exerciseId: ExerciseId,
-    answers: [Nat] // An array of indices corresponding to the user's chosen options
-  ) : async Result.Result<Nat, Text> {
-
-    let caller = msg.caller;
-
-    // Step 1: Get the exercise from the map.
-    switch (exercises.get(exerciseId)) {
-      case (null) {
-        return Result.Err("Exercise not found.");
+  
+  // Generate questions for a module (simplified)
+  private func generateQuestions(content : Text) : [Question] {
+    // In production, this would use AI to generate questions
+    [{
+      text = "What is the main topic of this module?";
+      options = ["Critical Thinking", "Fact Checking", "Media Literacy", "All of the above"];
+      correctIndex = 3;
+      explanation = "The module covers all these aspects of information verification.";
+    }];
+  };
+  
+  // Generate personalized module using AI
+  public shared ({ caller }) func generatePersonalizedModule(topic : Text) : async Result.Result<LearningModule, Text> {
+    try {
+      let userData = switch (userProgress.get(caller)) {
+        case (null) { "new user" };
+        case (?progress) { "experienced user with " # Nat.toText(progress.totalXP) # " XP" };
       };
-      case (?exercise) {
-        // Step 2: Validate the input.
-        if (answers.size() != exercise.questions.size()) {
-          return Result.Err("Invalid number of answers submitted.");
-        };
-
-        // Step 3: Calculate the score.
-        var correctAnswersCount: Nat = 0;
-        for (i in 0 ..< answers.size()) {
-          if (answers[i] == exercise.questions[i].correctAnswerIndex) {
-            correctAnswersCount += 1;
-          };
-        };
-
-        let pointsEarned: Nat = correctAnswersCount * exercise.pointsPerCorrectAnswer;
-
-        // Step 4: Update the user's progress.
-        // Get the user's existing progress, or create a new one if it's their first time.
+      
+      let prompt = "Create a critical thinking learning module about " # topic 
+        # " for " # userData # ". Include 3 multiple-choice questions.";
+      
+      let aiResponse = await AI_Integration.generateContent(prompt);
+      
+      let newModuleId = nextModuleId;
+      nextModuleId += 1;
+      
+      let newModule : LearningModule = {
+        id = newModuleId;
+        title = "AI-Generated: " # topic;
+        content = aiResponse;
+        difficulty = 3; // Default difficulty
+        topic = topic;
+        questions = parseAIQuestions(aiResponse);
+      };
+      
+      modules.put(newModuleId, newModule);
+      
+      // Assign to user
+      assignModuleToUser(caller, newModuleId);
+      
+      #ok(newModule);
+    } catch (e) {
+      #err("Failed to generate module: " # Error.message(e));
+    };
+  };
+  
+  // Simplified parser for demo
+  private func parseAIQuestions(content : Text) : [Question] {
+    // In production, this would parse structured AI response
+    [{
+      text = "What did you learn from this module?";
+      options = ["Critical evaluation", "Source checking", "Bias detection", "All of the above"];
+      correctIndex = 3;
+      explanation = "This module covered all these essential skills.";
+    }];
+  };
+  
+  private func assignModuleToUser(user : UserId, moduleId : ModuleId) {
+    let progress = switch (userProgress.get(user)) {
+      case (null) { { completedModules = []; currentModule = ?moduleId; totalXP = 0; subscriptionCredit = 0.0 } };
+      case (?p) { { p with currentModule = ?moduleId } };
+    };
+    userProgress.put(user, progress);
+  };
+  
+  // Complete a module and award XP
+  public shared ({ caller }) func completeModule(moduleId : ModuleId, score : Float) : async Result.Result<Nat, Text> {
+    switch (modules.get(moduleId)) {
+      case (null) { #err("Module not found") };
+      case (?learningmodule) {
+        let xpEarned = calculateXP(learningmodule.difficulty, score);
         let progress = switch (userProgress.get(caller)) {
-          case (?p) { p; }; // User has existing progress
-          case (null) {
-            // Create a new progress record for the user
-            let newProgress: UserProgress = { var completedExercises = []; var earnedPoints = 0; };
-            userProgress.put(caller, newProgress);
-            newProgress;
+          case (null) { 
+            let newProgress : UserProgress = {
+              completedModules = [moduleId];
+              currentModule = null;
+              totalXP = xpEarned;
+              subscriptionCredit = Float.fromInt(xpEarned) / 1000.0;
+            };
+            newProgress
+          };
+          case (?p) {
+            let newCompleted = Array.append(p.completedModules, [moduleId]);
+            let newXP = p.totalXP + xpEarned;
+            let newCredit = p.subscriptionCredit + (Float.fromInt(xpEarned) / 1000.0);
+            { 
+              completedModules = newCompleted; 
+              currentModule = null;
+              totalXP = newXP;
+              subscriptionCredit = newCredit;
+            }
           };
         };
-
-        // Add the completed exercise and update points.
-        // This prevents users from re-taking an exercise for more points.
-        // The Array.contains function needs a proper equality check for Text.
-        if (not Array.contains<ExerciseId>(progress.completedExercises, exerciseId, Text.equal)) {
-            progress.completedExercises := Array.append(progress.completedExercises, [exerciseId]);
-            progress.earnedPoints += pointsEarned;
-        };
-
-        return Result.Ok(pointsEarned);
+        
+        userProgress.put(caller, progress);
+        
+        // Apply subscription credit to user account
+        await UserAccount.applySubscriptionCredit(caller, progress.subscriptionCredit);
+        
+        #ok(progress.totalXP);
       };
     };
   };
-
-  // A query function for the user to see their own progress.
-  public query func getMyProgress() : async ?UserProgress {
-    return userProgress.get(msg.caller);
+  
+  private func calculateXP(difficulty : Nat, score : Float) : Nat {
+    let baseXP = difficulty * 20;
+    Float.toInt(Float.fromInt(baseXP) * score)
   };
-
-  // A query function to get all available learning modules for the frontend to display.
-  public query func getAllModules() : async [LearningModule] {
-    return TrieMap.values(modules);
-  };
-}
+};

@@ -1,9 +1,9 @@
 {
- "canisters": {
-     "Main": {
-      "main": "src/Main.mo",
-      "candid": "src/Main.did",
-      "package": "src/Main.did",
+  "canisters": {
+    "Main": {
+      "main": "canisters/backend/Main.mo",
+      "candid": "canisters/backend/Main.did",
+      "package": "canisters/backend/Main.did",
       "type": "motoko",
       "dependencies": [
         "UserAccountCanister",
@@ -36,57 +36,110 @@
     },
     "UserAccountCanister": {
       "main": "canisters/backend/UserAccountCanister/src/UserAccountCanister.mo",
-      "type": "motoko"
+      "type": "motoko",
+      "dependencies": ["NotificationCanister"]
     },
     "AletheianProfileCanister": {
       "main": "canisters/backend/AletheianProfileCanister/src/AletheianProfileCanister.mo",
-      "type": "motoko"
+      "type": "motoko",
+      "dependencies": ["ReputationLogicCanister"]
     },
     "FactLedgerCanister": {
       "main": "canisters/backend/FactLedgerCanister/src/FactLedgerCanister.mo",
-      "type": "motoko"
+      "type": "motoko",
+      "dependencies": ["IPFSAdapter"]
     },
     "ReputationLogicCanister": {
       "main": "canisters/backend/ReputationLogicCanister/src/ReputationLogicCanister.mo",
-      "type": "motoko"
+      "type": "motoko",
+      "dependencies": ["VerificationWorkflowCanister", "EscalationCanister"]
     },
     "ClaimSubmissionCanister": {
       "main": "canisters/backend/ClaimSubmissionCanister/src/ClaimSubmissionCanister.mo",
-      "type": "motoko"
+      "type": "motoko",
+      "dependencies": ["AI_IntegrationCanister", "AletheianDispatchCanister"]
     },
     "AI_IntegrationCanister": {
       "main": "canisters/backend/AI_IntegrationCanister/src/AI_IntegrationCanister.mo",
-      "type": "motoko"
+      "type": "motoko",
+      "dependencies": []
     },
     "AletheianDispatchCanister": {
       "main": "canisters/backend/AletheianDispatchCanister/src/AletheianDispatchCanister.mo",
-      "type": "motoko"
+      "type": "motoko",
+      "dependencies": ["AletheianProfileCanister"]
     },
     "VerificationWorkflowCanister": {
       "main": "canisters/backend/VerificationWorkflowCanister/src/VerificationWorkflowCanister.mo",
-      "type": "motoko"
+      "type": "motoko",
+      "dependencies": [
+        "AletheianProfileCanister",
+        "FactLedgerCanister",
+        "AI_Adapter",
+        "EscalationCanister"
+      ]
     },
     "EscalationCanister": {
       "main": "canisters/backend/EscalationCanister/src/EscalationCanister.mo",
-      "type": "motoko"
+      "type": "motoko",
+      "dependencies": ["AletheianProfileCanister", "FactLedgerCanister"]
     },
     "FinanceCanister": {
       "main": "canisters/backend/FinanceCanister/src/FinanceCanister.mo",
-      "type": "motoko"
+      "type": "motoko",
+      "dependencies": ["DIP20Token", "ReputationLogicCanister"]
     },
     "GamifiedLearningCanister": {
       "main": "canisters/backend/GamifiedLearningCanister/src/GamifiedLearningCanister.mo",
-      "type": "motoko"
+      "type": "motoko",
+      "dependencies": ["AI_IntegrationCanister", "UserAccountCanister"]
     },
     "NotificationCanister": {
       "main": "canisters/backend/NotificationCanister/src/NotificationCanister.mo",
+      "type": "motoko",
+      "dependencies": []
+    },
+    "DIP20Token": {
+      "main": "canisters/backend/DIP20TokenCanister/src/main.mo",
       "type": "motoko"
+    },
+    "AI_Adapter": {
+      "main": "canisters/backend/AI_Adapter/src/main.mo",
+      "type": "motoko"
+    },
+    "IPFSAdapter": {
+      "main": "canisters/backend/IPFSAdapter/src/main.mo",
+      "type": "motoko"
+    },
+    "mo_base": {
+      "type": "assets",
+      "source": ["mo:base"],
+      "module": "mo:base",
+      "build": "mo:base"
     }
   },
   "defaults": {
     "build": {
       "args": "",
-      "packtool": ""
+      "packtool": "",
+      "depends_on": [
+        "DIP20Token",
+        "AI_Adapter",
+        "IPFSAdapter",
+        "UserAccountCanister",
+        "AletheianProfileCanister",
+        "FactLedgerCanister",
+        "ReputationLogicCanister",
+        "AI_IntegrationCanister",
+        "AletheianDispatchCanister",
+        "VerificationWorkflowCanister",
+        "EscalationCanister",
+        "NotificationCanister",
+        "ClaimSubmissionCanister",
+        "FinanceCanister",
+        "GamifiedLearningCanister",
+        "Main"
+      ]
     }
   },
   "output_env_file": ".env",
