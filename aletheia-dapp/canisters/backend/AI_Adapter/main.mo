@@ -1,7 +1,7 @@
 import HashMap "mo:base/HashMap";
 import Text "mo:base/Text";
 import Error "mo:base/Error";
-import HTTP "mo:base/Http";
+import Http "mo:base/Http";
 import Blob "mo:base/Blob";
 import Array "mo:base/Array";
 import Option "mo:base/Option";
