@@ -1,6 +1,5 @@
 import type { Principal } from '@dfinity/principal';
 import type { ActorMethod } from '@dfinity/agent';
-import type { IDL } from '@dfinity/candid';
 
 export type ClaimId = string;
 export type Result = { 'ok' : UserProfile } |
@@ -20,5 +19,3 @@ export interface _SERVICE {
   'createProfile' : ActorMethod<[[] | [string]], Result_1>,
   'getProfile' : ActorMethod<[], Result>,
 }
-export declare const idlFactory: IDL.InterfaceFactory;
-export declare const init: (args: { IDL: typeof IDL }) => IDL.Type[];

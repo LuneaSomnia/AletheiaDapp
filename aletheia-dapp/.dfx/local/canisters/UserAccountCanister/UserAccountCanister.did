@@ -18,8 +18,8 @@ type Result =
  };
 type ClaimId = text;
 service : {
-  addLearningPoints: (points: nat) -> (Result_1);
-  addSubmittedClaim: (claimId: ClaimId) -> (Result_1);
-  createProfile: (username: opt text) -> (Result_1);
+  addLearningPoints: (nat) -> (Result_1);
+  addSubmittedClaim: (ClaimId) -> (Result_1);
+  createProfile: (opt text) -> (Result_1);
   getProfile: () -> (Result) query;
 }
