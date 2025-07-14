@@ -1,172 +1,461 @@
-import Principal "mo:base/Principal";
+import Array "mo:base/Array";
+import Buffer "mo:base/Buffer";
 import HashMap "mo:base/HashMap";
+import Int "mo:base/Int";
+import Iter "mo:base/Iter";
+import Principal "mo:base/Principal";
 import Result "mo:base/Result";
 import Text "mo:base/Text";
-import Array "mo:base/Array";
-import Nat "mo:base/Nat";
+import Float "mo:base/Float";
 import Time "mo:base/Time";
-import Int "mo:base/Int";
-import Nat64 "mo:base/Nat64";
 
 actor AletheianProfileCanister {
-  type AletheianId = Principal;
-  type Badge = Text;
-  type Rank = {
-    #Trainee;
-    #Junior;
-    #Associate;
-    #Senior;
-    #Expert;
-    #Master;
-  };
-  
-  type Profile = {
-    username: ?Text;
-    createdAt: Int;
-    lastActive: Int;
-    xp: Nat;
-    rank: Rank;
-    badges: [Badge];
-    warnings: Nat;
-    performance: PerformanceMetrics;
-  };
-  
-  type PerformanceMetrics = {
-    accuracy: Float;
-    avgVerificationTime: Nat;
-    claimsVerified: Nat;
-    escalationsResolved: Nat;
-  };
-  
-  let profiles = HashMap.HashMap<AletheianId, Profile>(0, Principal.equal, Principal.hash);
-  let usernameToPrincipal = HashMap.HashMap<Text, AletheianId>(0, Text.equal, Text.hash);
-  
-  // Create a new profile
-  public shared ({ caller }) func createProfile(username: ?Text) : async Result.Result<(), Text> {
-    if (Principal.isAnonymous(caller)) {
-      return #err("Anonymous users cannot create profiles");
+    type Rank = {
+        #Trainee;
+        #Junior;
+        #Associate;
+        #Senior;
+        #Expert;
+        #Master;
+    };
+
+    type AletheianProfile = {
+        id : Principal;
+        rank : Rank;
+        xp : Int;  // Experience points
+        expertiseBadges : [Text];  // e.g., ["Health", "Deepfake Analysis"]
+        location : ?Text;  // Optional geo-location
+        status : { #Active; #Suspended; #Retired };
+        warnings : Nat;  // Number of warnings received
+        accuracy : Float;  // Historical accuracy percentage
+        claimsVerified : Nat;  // Total claims verified
+        completedTraining : [Text];  // IDs of completed training modules
+        createdAt : Int;  // Timestamp
+        lastActive : Int;  // Timestamp
+    };
+
+    type RegistrationRequest = {
+        principal : Principal;
+        location : ?Text;
+        testResults : [Nat];  // Scores from vetting tests
+    };
+
+    // Stable storage for upgrades
+    stable var profilesEntries : [(Principal, AletheianProfile)] = [];
+    stable var requestsEntries : [(Principal, RegistrationRequest)] = [];
+    stable var trainingModules : [Text] = [
+        "critical-thinking-101",
+        "bias-identification",
+        "craap-model",
+        "aletheia-guidelines"
+    ];
+
+    let profiles = HashMap.HashMap<Principal, AletheianProfile>(
+        0, Principal.equal, Principal.hash
+    );
+    
+    let registrationRequests = HashMap.HashMap<Principal, RegistrationRequest>(
+        0, Principal.equal, Principal.hash
+    );
+
+    // Rank thresholds based on XP
+    let RANK_THRESHOLDS = [
+        (0, #Junior),
+        (250, #Associate),
+        (750, #Senior),
+        (2000, #Expert),
+        (5000, #Master)
+    ];
+
+    // Training module XP rewards
+    let TRAINING_XP = [
+        ("critical-thinking-101", 10),
+        ("bias-identification", 15),
+        ("craap-model", 20),
+        ("aletheia-guidelines", 25)
+    ];
+
+    // System initialization
+    system func preupgrade() {
+        profilesEntries := Iter.toArray(profiles.entries());
+        requestsEntries := Iter.toArray(registrationRequests.entries());
+    };
+
+    system func postupgrade() {
+        var profiles = HashMap.fromIter<Principal, AletheianProfile>(
+            profilesEntries.vals(), 0, Principal.equal, Principal.hash
+        );
+        var registrationRequests = HashMap.fromIter<Principal, RegistrationRequest>(
+            requestsEntries.vals(), 0, Principal.equal, Principal.hash
+        );
+        profilesEntries := [];
+        requestsEntries := [];
+    };
+
+    // ======================
+    // Onboarding & Vetting
+    // ======================
+    
+    /// Step 1: Submit registration request with test results
+    public shared ({ caller }) func submitRegistration(
+        location : ?Text, 
+        testResults : [Nat]
+    ) : async Result.Result<Text, Text> {
+        if (profiles.get(caller) != null) {
+            return #err("You're already registered as an Aletheian");
+        };
+        
+        if (registrationRequests.get(caller) != null) {
+            return #err("Registration request already pending");
+        };
+        
+        // Basic vetting: Must pass all training modules
+        if (testResults.size() != trainingModules.size()) {
+            return #err("Invalid test results format");
+        };
+        
+        for (score in testResults.vals()) {
+            if (score < 80) { // 80% passing score
+                return #err("Vetting failed: Insufficient test scores");
+            };
+        };
+        
+        let request : RegistrationRequest = {
+            principal = caller;
+            location = location;
+            testResults = testResults;
+        };
+        
+        registrationRequests.put(caller, request);
+        #ok("Registration request submitted. Awaiting approval.");
     };
     
-    switch (profiles.get(caller)) {
-      case (?_) { #err("Profile already exists") };
-      case null {
-        let newProfile: Profile = {
-          username = username;
-          createdAt = Time.now();
-          lastActive = Time.now();
-          xp = 0;
-          rank = #Trainee;
-          badges = [];
-          warnings = 0;
-          performance = {
-            accuracy = 0.0;
-            avgVerificationTime = 0;
-            claimsVerified = 0;
-            escalationsResolved = 0;
-          };
+    /// Step 2: Admin approves registration (to be called by admin)
+    public shared ({ caller }) func approveRegistration(
+        applicant : Principal
+    ) : async Result.Result<Text, Text> {
+        // In real implementation, add admin check here
+        switch (registrationRequests.get(applicant)) {
+            case null { #err("No registration request found") };
+            case (?request) {
+                // Create initial profile
+                let newProfile : AletheianProfile = {
+                    id = applicant;
+                    rank = #Trainee;
+                    xp = 0;
+                    expertiseBadges = [];
+                    location = request.location;
+                    status = #Active;
+                    warnings = 0;
+                    accuracy = 100.0; // Starting accuracy
+                    claimsVerified = 0;
+                    completedTraining = trainingModules; // Auto-complete required training
+                    createdAt = Time.now();
+                    lastActive = Time.now();
+                };
+                
+                // Award XP for completed training
+                var totalXp = 0;
+                for (trainingmodule in trainingModules.vals()) {
+                    switch (Array.find(TRAINING_XP, func ((m, x) : (Text, Nat)) : Bool = m == trainingmodule)) {
+                        case (?(_, xp)) { totalXp += xp };
+                        case null {};
+                    };
+                };
+                
+                let updatedProfile = updateXp(newProfile, totalXp);
+                profiles.put(applicant, updatedProfile);
+                registrationRequests.delete(applicant);
+                
+                #ok("Aletheian approved and onboarded successfully");
+            };
         };
-        
-        profiles.put(caller, newProfile);
-        
-        switch (username) {
-          case (?name) { usernameToPrincipal.put(name, caller) };
-          case null {};
-        };
-        
-        #ok(())
-      }
-    }
-  };
-  
-  // Get profile by principal
-  public shared query ({ caller }) func getProfile() : async Result.Result<Profile, Text> {
-    switch (profiles.get(caller)) {
-      case (?profile) { #ok(profile) };
-      case null { #err("Profile not found") };
-    }
-  };
-  
-  // Update profile
-  public shared ({ caller }) func updateProfile(username: ?Text) : async Result.Result<(), Text> {
-    switch (profiles.get(caller)) {
-      case (?profile) {
-        // Remove old username mapping
-        switch (profile.username) {
-          case (?oldName) { ignore usernameToPrincipal.remove(oldName) };
-          case null {};
-        };
-        
-        // Add new username mapping
-        switch (username) {
-          case (?newName) { usernameToPrincipal.put(newName, caller) };
-          case null {};
-        };
-        
-        let updatedProfile: Profile = {
-          profile with 
-          username = username;
-          lastActive = Time.now();
-        };
-        
-        profiles.put(caller, updatedProfile);
-        #ok(())
-      };
-      case null { #err("Profile not found") };
-    }
-  };
-  
-  // Update XP and rank
-  public shared ({ caller }) func updateXP(xpDelta: Int) : async Result.Result<(), Text> {
-  switch (profiles.get(caller)) {
-    case (?profile) {
-      let newXP: Nat = Nat64.toNat(Nat64.fromIntWrap(Int.abs(xpDelta)));
-      
-      let newRank = calculateRank(newXP);
-
-      let updatedProfile: Profile = {
-        profile with 
-        xp = newXP;
-        rank = newRank;
-        lastActive = Time.now();
-      };
-
-      profiles.put(caller, updatedProfile);
-      #ok(())
     };
-    case null { #err("Profile not found") };
-  }
-};
+    
+    // ======================
+    // Reputation & XP System
+    // ======================
+    
+    /// Update XP and automatically adjust rank
+    func updateXp(profile : AletheianProfile, xpChange : Int) : AletheianProfile {
+        let newXp = profile.xp + xpChange;
+        let newRank = calculateRank(newXp);
+        
+        {
+            profile with
+            xp = newXp;
+            rank = newRank;
+            lastActive = Time.now();
+        }
+    };
+    
+    /// Calculate rank based on XP thresholds
+    func calculateRank(xp : Int) : Rank {
+        var currentRank : Rank = #Trainee;
+        for ((threshold, rank) in RANK_THRESHOLDS.vals()) {
+            if (xp >= threshold) {
+                currentRank := rank;
+            } else {
+                return currentRank;
+            };
+        };
+        currentRank
+    };
+    
+    /// Public function to update XP (called by other canisters)
+    public shared ({ caller }) func updateAletheianXp(
+        aletheian : Principal,
+        xpChange : Int,
+        accuracyImpact : ?Float
+    ) : async Result.Result<(), Text> {
+        switch (profiles.get(aletheian)) {
+            case null { #err("Aletheian not found") };
+            case (?profile) {
+                var updatedProfile = updateXp(profile, xpChange);
+                
+                // Update accuracy if provided
+                updatedProfile := switch (accuracyImpact) {
+                    case (?impact) {
+                        let newAccuracy = 
+                            (profile.accuracy * Float.fromInt(profile.claimsVerified) 
+                            + impact) / Float.fromInt(profile.claimsVerified + 1);
+                        { updatedProfile with 
+                            claimsVerified = profile.claimsVerified + 1;
+                            accuracy = newAccuracy;
+                        }
+                    };
+                    case null updatedProfile;
+                };
+                
+                profiles.put(aletheian, updatedProfile);
+                #ok();
+            };
+        };
+    };
+    
+    /// Apply warning with XP penalty
+    public shared ({ caller }) func issueWarning(
+        aletheian : Principal,
+        severity : { #Minor; #Major }
+    ) : async Result.Result<(), Text> {
+        switch (profiles.get(aletheian)) {
+            case null { #err("Aletheian not found") };
+            case (?profile) {
+                let xpPenalty = switch (severity) {
+                    case (#Minor) -5;
+                    case (#Major) -20;
+                };
+                
+                let warningCount = profile.warnings + 1;
+                var updatedProfile = updateXp(profile, xpPenalty);
+                updatedProfile := { updatedProfile with warnings = warningCount };
+                
+                // Apply suspension for multiple warnings
+                if (warningCount >= 3) {
+                    updatedProfile := { updatedProfile with status = #Suspended };
+                };
+                
+                profiles.put(aletheian, updatedProfile);
+                #ok();
+            };
+        };
+    };
+    
+    // ======================
+    // Badge Management
+    // ======================
+    
+    // ... (previous code)
 
-  
-  // Add a badge
-  public shared ({ caller }) func addBadge(badge: Badge) : async Result.Result<(), Text> {
-    switch (profiles.get(caller)) {
-      case (?profile) {
-        if (Array.find<Badge>(profile.badges, func(b) { b == badge }) != null) {
-          return #err("Badge already exists");
+// Custom function to compare ranks
+func rankIsHigher(rank1: Rank, rank2: Rank): Bool {
+  switch (rank1, rank2) {
+    case (#Master, _) true;
+    case (#Expert, #Master) false;
+    case (#Expert, _) true;
+    case (#Senior, #Master) false;
+    case (#Senior, #Expert) false;
+    case (#Senior, _) true;
+    case (#Associate, #Master) false;
+    case (#Associate, #Expert) false;
+    case (#Associate, #Senior) false;
+    case (#Associate, _) true;
+    case (#Junior, #Master) false;
+    case (#Junior, #Expert) false;
+    case (#Junior, #Senior) false;
+    case (#Junior, #Associate) false;
+    case (#Junior, _) true;
+    case (#Trainee, _) false;
+  }
+}
+
+    /// Apply for an expertise badge
+    public shared ({ caller }) func applyForBadge(
+        badge : Text,
+        evidence : [Text]  // Links to verified claims in this domain
+    ) : async Result.Result<Text, Text> {
+        switch (profiles.get(caller)) {
+            case null { #err("Profile not found") };
+            case (?profile) {
+                // Check rank requirement (Senior+)
+                if (not rankIsHigher(profile.rank, #Senior)) {
+  return #err("Requires Senior rank or higher");
+};
+                
+                // Check if already has badge
+                if (Array.find(profile.expertiseBadges, func (b : Text) : Bool = b == badge) != null) {
+                    return #err("Already has this badge");
+                };
+                
+                // Basic validation - in real system would verify evidence
+                if (evidence.size() < 5) { // Require 5 verified claims
+                    return #err("Insufficient evidence for badge application");
+                };
+                
+                // Add badge to profile
+                let newBadges = Array.append(profile.expertiseBadges, [badge]);
+                let updatedProfile = {
+                    profile with
+                    expertiseBadges = newBadges;
+                    lastActive = Time.now();
+                };
+                
+                profiles.put(caller, updatedProfile);
+                #ok("Badge application submitted for review");
+            };
         };
-        
-        let updatedBadges = Array.append(profile.badges, [badge]);
-        let updatedProfile: Profile = {
-          profile with 
-          badges = updatedBadges;
-          lastActive = Time.now();
+    };
+    
+    /// Admin approves badge (to be called by admin)
+    public shared ({ caller }) func grantBadge(
+        aletheian : Principal,
+        badge : Text
+    ) : async Result.Result<(), Text> {
+        switch (profiles.get(aletheian)) {
+            case null { #err("Aletheian not found") };
+            case (?profile) {
+                if (Array.find(profile.expertiseBadges, func (b : Text) : Bool = b == badge) != null) {
+                    return #err("Already has this badge");
+                };
+                
+                let newBadges = Array.append(profile.expertiseBadges, [badge]);
+                let updatedProfile = {
+                    profile with
+                    expertiseBadges = newBadges;
+                    lastActive = Time.now();
+                };
+                
+                profiles.put(aletheian, updatedProfile);
+                #ok();
+            };
         };
+    };
+    
+    // ======================
+    // Profile Management
+    // ======================
+    
+    /// Get profile (public view)
+    public query func getProfile(aletheian : Principal) : async ?AletheianProfile {
+        profiles.get(aletheian)
+    };
+    
+    /// Update profile information (location only for now)
+    public shared ({ caller }) func updateProfile(
+        location : ?Text
+    ) : async Result.Result<(), Text> {
+        switch (profiles.get(caller)) {
+            case null { #err("Profile not found") };
+            case (?profile) {
+                let updatedProfile = {
+                    profile with
+                    location = location;
+                    lastActive = Time.now();
+                };
+                profiles.put(caller, updatedProfile);
+                #ok();
+            };
+        };
+    };
+    
+    /// Admin updates status (activate/suspend/retire)
+    public shared ({ caller }) func updateStatus(
+        aletheian : Principal,
+        status : { #Active; #Suspended; #Retired }
+    ) : async Result.Result<(), Text> {
+        // In real implementation, add admin check here
+        switch (profiles.get(aletheian)) {
+            case null { #err("Aletheian not found") };
+            case (?profile) {
+                let updatedProfile = {
+                    profile with
+                    status = status;
+                    lastActive = Time.now();
+                };
+                profiles.put(aletheian, updatedProfile);
+                #ok();
+            };
+        };
+    };
+    
+    // ======================
+    // Query Functions
+    // ======================
+    
+    public query func getAllAletheians() : async [AletheianProfile] {
+        Iter.toArray(profiles.vals())
+    };
+    
+    public query func getAletheiansByRank(minRank : Rank) : async [AletheianProfile] {
+        let buffer = Buffer.Buffer<AletheianProfile>(0);
+        for (profile in profiles.vals()) {
+            if (not rankIsHigher(profile.rank, #Senior)) {
+                buffer.add(profile);
+            };
+        };
+        Buffer.toArray(buffer)
+    };
+    
+    public query func getAletheiansWithBadge(badge : Text) : async [AletheianProfile] {
+        let buffer = Buffer.Buffer<AletheianProfile>(0);
+        for (profile in profiles.vals()) {
+            if (Array.find(profile.expertiseBadges, func (b : Text) : Bool = b == badge) != null) {
+                buffer.add(profile);
+            };
+        };
+        Buffer.toArray(buffer)
+    };
+    
+    public query func getPendingRegistrations() : async [RegistrationRequest] {
+        Iter.toArray(registrationRequests.vals())
+    };
+    
+    // ======================
+    // Maintenance Functions
+    // ======================
+    
+    /// Clean up inactive profiles (called periodically)
+    public shared ({ caller }) func purgeInactiveAletheians(
+    inactiveDays : Nat
+) : async () {
+    // In real implementation, add admin check
+    let now = Time.now();
+    let secondsInDay = 24 * 60 * 60 * 1_000_000_000; // nanoseconds in a day
         
-        profiles.put(caller, updatedProfile);
-        #ok(())
-      };
-      case null { #err("Profile not found") };
-    }
-  };
-  
-  // Internal function to calculate rank based on XP
-  func calculateRank(xp: Nat) : Rank {
-    if (xp >= 10000) #Master
-    else if (xp >= 5000) #Expert
-    else if (xp >= 2000) #Senior
-    else if (xp >= 1000) #Associate
-    else if (xp >= 500) #Junior
-    else #Trainee
-  };
+    for ((principal, profile) in profiles.entries()) {
+        if (profile.status != #Active) continue;
+        
+        let timeDiff = now - profile.lastActive;
+        let daysInactive = timeDiff / secondsInDay;
+        
+        if (daysInactive > inactiveDays) {
+            // Mark as retired after prolonged inactivity
+            let updatedProfile = {
+                profile with
+                status = #Retired;
+            };
+            profiles.put(principal, updatedProfile);
+        };
+    };
+};
 };
