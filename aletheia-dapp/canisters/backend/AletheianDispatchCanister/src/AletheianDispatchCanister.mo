@@ -1,118 +1,231 @@
-import Principal "mo:base/Principal";
-import HashMap "mo:base/HashMap";
 import Array "mo:base/Array";
-import List "mo:base/List";
-import Iter "mo:base/Iter";
 import Buffer "mo:base/Buffer";
+import HashMap "mo:base/HashMap";
+import Iter "mo:base/Iter";
+import List "mo:base/List";
+import Nat "mo:base/Nat";
+import Principal "mo:base/Principal";
 import Result "mo:base/Result";
 import Text "mo:base/Text";
 import Time "mo:base/Time";
-import _ "mo:base/Debug";
+import Error "mo:base/Error";
 
 actor AletheianDispatchCanister {
-  type ClaimId = Text;
-  type AletheianId = Principal;
-  type Claim = {
-    id: ClaimId;
-    content: Text;
-    category: ?Text;
-    complexity: Text; // "Low", "Medium", "High"
-    submittedAt: Int;
-  };
-
-  type AletheianProfile = {
-    id: AletheianId;
-    expertise: [Text]; // Categories of expertise
-    reputation: Nat; // XP
-    status: Text; // "available", "busy", "offline"
-    location: ?Text; // Optional for geo-assignment
-    lastActive: Int;
-  };
-
-  // In-memory storage
-  private var claimsQueue = List.nil<Claim>();
-  private var aletheianProfiles = HashMap.HashMap<AletheianId, AletheianProfile>(0, Principal.equal, Principal.hash);
-  private var assignments = HashMap.HashMap<ClaimId, [AletheianId]>(0, Text.equal, Text.hash);
-  private var aletheianWorkload = HashMap.HashMap<AletheianId, Nat>(0, Principal.equal, Principal.hash);
-
-  // Register an Aletheian profile
-  public shared func registerAletheian(profile: AletheianProfile) : async Result.Result<(), Text> {
-    aletheianProfiles.put(profile.id, profile);
-    aletheianWorkload.put(profile.id, 0);
-    #ok(())
-  };
-
-  // Update Aletheian status
-  public shared func updateAletheianStatus(
-    aletheianId: AletheianId, 
-    status: Text
-  ) : async Result.Result<(), Text> {
-    switch (aletheianProfiles.get(aletheianId)) {
-      case (?profile) {
-        let updated = {
-          profile with 
-          status = status;
-          lastActive = Time.now();
-        };
-        aletheianProfiles.put(aletheianId, updated);
-        #ok(())
-      };
-      case null #err("Aletheian not found");
-    }
-  };
-
-  // Add a claim to the queue
-  public shared func addClaim(claim: Claim) : async Result.Result<(), Text> {
-    claimsQueue := List.push(claim, claimsQueue);
-    #ok(())
-  };
-
-  // Assign claims to Aletheians
-  public shared func assignClaims() : async Result.Result<(), Text> {
-    // 1. Filter by status
-    let available = Buffer.Buffer<AletheianProfile>(0);
-    for (profile in aletheianProfiles.vals()) {
-      if (profile.status == "available") {
-        available.add(profile);
-      };
+    type AletheianProfile = {
+        id : Principal;
+        online : Bool;
+        workload : Nat; // Current number of assigned claims
+        reputation : Nat; // XP score
+        expertise : [Text]; // Badges like "Health", "Politics"
+        location : ?Text; // Optional country code
+        lastActive : Int; // Timestamp
     };
 
-    if (available.size() < 3) {
-      return #err("Not enough available Aletheians");
+    type Claim = {
+        id : Text;
+        content : Text;
+        claimType : Text;
+        tags : [Text]; // Categories like "Politics", "Health"
+        locationHint : ?Text; // Optional geo-relevance
+        timestamp : Int;
     };
 
-    // 2. Filter by expertise if claim has category
-    let qualified = Buffer.Buffer<AletheianProfile>(0);
-    for (claim in Iter.fromList(claimsQueue)) {
-      switch (claim.category) {
-        case (?category) {
-          for (profile in available.vals()) {
-            if (Array.find<Text>(profile.expertise, func(e) { e == category }) != null) {
-              qualified.add(profile);
+    type AssignmentResult = Result.Result<[Principal], Text>;
+
+    // Stable storage
+    stable var profilesEntries : [(Principal, AletheianProfile)] = [];
+    stable var assignmentsEntries : [(Text, [Principal])] = [];
+    
+    let profiles = HashMap.HashMap<Principal, AletheianProfile>(0, Principal.equal, Principal.hash);
+    let assignments = HashMap.HashMap<Text, [Principal]>(0, Text.equal, Text.hash);
+
+    // Canister references
+    let profileCanister : actor {
+        getProfile : (id : Principal) -> async ?AletheianProfile;
+        updateWorkload : (id : Principal, delta : Int) -> async Bool;
+    } = actor ("profiles-cai"); // Replace with actual canister ID
+
+    system func preupgrade() {
+        profilesEntries := Iter.toArray(profiles.entries());
+        assignmentsEntries := Iter.toArray(assignments.entries());
+    };
+
+    system func postupgrade() {
+        var profiles = HashMap.fromIter<Principal, AletheianProfile>(profilesEntries.vals(), 0, Principal.equal, Principal.hash);
+        var assignments = HashMap.fromIter<Text, [Principal]>(assignmentsEntries.vals(), 0, Text.equal, Text.hash);
+        profilesEntries := [];
+        assignmentsEntries := [];
+    };
+
+    // Main dispatch function
+    public shared func assignClaim(claim : Claim) : async AssignmentResult {
+        try {
+            // Get all eligible Aletheians
+            let candidates = Buffer.Buffer<AletheianProfile>(0);
+            for (profile in profiles.vals()) {
+                if (isEligible(profile)) {
+                    candidates.add(profile);
+                }
             };
-          };
-        };
-        case null {
-          for (profile in available.vals()) {
-            qualified.add(profile);
-          };
-        };
-      };
+
+            if (candidates.size() < 3) {
+                return #err("Insufficient eligible Aletheians");
+            };
+
+            // Score and sort candidates
+            let scored = Buffer.map<AletheianProfile, (AletheianProfile, Nat)>(candidates, func(p) {
+                (p, calculateScore(p, claim))
+            });
+            scored.sort(func(a, b) { Nat.compare(b.1, a.1) });
+
+            // Select top 3 unique profiles
+            let selected = selectAletheians(scored, claim);
+
+            if (selected.size() < 3) {
+                return #err("Failed to find 3 qualified Aletheians");
+            };
+
+            // Update assignments and workloads
+            assignments.put(claim.id, Buffer.toArray(selected));
+            for (aletheianId in selected.vals()) {
+                ignore await profileCanister.updateWorkload(aletheianId, 1);
+            };
+
+            #ok(Buffer.toArray(selected));
+        } catch (e) {
+            #err("Assignment failed: " # Error.message(e));
+        }
     };
 
-      if (qualified.size() < 3) {
-        return #err("Not enough qualified Aletheians");
-      };
-  
-      // If you reach here, assignment logic would go here.
-      // For now, just return ok(()) to satisfy the return type.
-      return #ok(());
-  }; 
-  // Get workload of an Aletheian
-  public shared func getWorkload(aletheianId: AletheianId) : async Result.Result<Nat, Text> {
-    switch (aletheianWorkload.get(aletheianId)) {
-      case (?workload) #ok(workload);
-      case null #err("Aletheian not found");
-    }
-  }
-}
+    // Eligibility check
+    func isEligible(profile : AletheianProfile) : Bool {
+        profile.online and 
+        profile.workload < 5 and // Max 5 concurrent claims
+        Time.now() - profile.lastActive < 300_000_000_000 // 5 minutes
+    };
+
+    // Scoring algorithm
+    func calculateScore(profile : AletheianProfile, claim : Claim) : Nat {
+        var score : Nat = 0;
+        
+        // Expertise match (50% weight)
+        let expertiseMatch = calculateExpertiseMatch(profile.expertise, claim.tags);
+        score += expertiseMatch * 5;
+        
+        // Geo-relevance (20% weight)
+        switch (profile.location, claim.locationHint) {
+            case (?loc, ?hint) if (loc == hint) { score += 20 };
+            case _ {};
+        };
+        
+        // Workload (lower is better - 20% weight)
+        score += (5 - profile.workload) * 4;
+        
+        // Reputation (10% weight)
+        score += Nat.min(profile.reputation / 100, 10);
+        
+        score
+    };
+
+    func calculateExpertiseMatch(aletheianBadges : [Text], claimTags : [Text]) : Nat {
+        var matches : Nat = 0;
+        for (tag in claimTags.vals()) {
+            if (Array.find<Text>(aletheianBadges, func(b) { b == tag }) != null) {
+                matches += 1;
+            }
+        };
+        matches
+    };
+
+    // Selection with diversity
+    func selectAletheians(
+        scored : Buffer.Buffer<(AletheianProfile, Nat)>,
+        claim : Claim
+    ) : Buffer.Buffer<Principal> {
+        let selected = Buffer.Buffer<Principal>(3);
+        var index = 0;
+        
+        
+// Try to get local expert first if available
+switch (claim.locationHint) {
+    case (?location) {
+        while (index < scored.size() and selected.size() < 3) {
+            let (profile, _) = scored.get(index);
+            switch (profile.location) {
+                case (?loc) if (loc == location) {
+                    selected.add(profile.id);
+                    scored.removeIndex(index);
+                };
+                case _ { index += 1 };
+            };
+        };
+    };
+    case null { index := 0 };
+};
+
+// Fill remaining spots with best matches
+index := 0;
+        while (index < scored.size() and selected.size() < 3) {
+            let (profile, _) = scored.get(index);
+            if (not Buffer.contains<Principal>(selected, profile.id, Principal.equal)) {
+                selected.add(profile.id);
+            };
+            index += 1;
+        };
+        
+        selected
+    };
+
+    // Update when assignment completes
+    public shared func completeAssignment(claimId : Text) : async Bool {
+        switch (assignments.get(claimId)) {
+            case (?aletheians) {
+                for (id in aletheians.vals()) {
+                    ignore await profileCanister.updateWorkload(id, -1);
+                };
+                assignments.delete(claimId);
+                true
+            };
+            case null false;
+        }
+    };
+
+    // Profile management
+    public shared ({caller}) func updateProfile(
+        online : Bool,
+        expertise : [Text],
+        location : ?Text
+    ) : async Bool {
+        switch (profiles.get(caller)) {
+            case (?profile) {
+                let updated = {
+                    profile with
+                    online;
+                    expertise;
+                    location;
+                    lastActive = Time.now();
+                };
+                profiles.put(caller, updated);
+                true
+            };
+            case null false;
+        }
+    };
+
+    public shared ({caller}) func registerProfile(
+        expertise : [Text],
+        location : ?Text
+    ) : async Bool {
+        let newProfile : AletheianProfile = {
+            id = caller;
+            online = true;
+            workload = 0;
+            reputation = 0;
+            expertise;
+            location;
+            lastActive = Time.now();
+        };
+        profiles.put(caller, newProfile);
+        true
+    };
+};
