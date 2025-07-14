@@ -287,7 +287,7 @@ func rankIsHigher(rank1: Rank, rank2: Rank): Bool {
     case (#Junior, _) true;
     case (#Trainee, _) false;
   }
-}
+};
 
     /// Apply for an expertise badge
     public shared ({ caller }) func applyForBadge(
@@ -443,7 +443,8 @@ func rankIsHigher(rank1: Rank, rank2: Rank): Bool {
     let secondsInDay = 24 * 60 * 60 * 1_000_000_000; // nanoseconds in a day
         
     for ((principal, profile) in profiles.entries()) {
-        if (profile.status != #Active) continue;
+        if (profile.status != #Active) 
+        continue; 
         
         let timeDiff = now - profile.lastActive;
         let daysInactive = timeDiff / secondsInDay;
