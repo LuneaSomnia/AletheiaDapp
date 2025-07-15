@@ -11,14 +11,28 @@ interface UserProfile {
   accuracyRating: number;
 }
 
-const ProfileSection: React.FC<{ profile: UserProfile }> = ({ profile }) => {
+const ProfileSection: React.FC<{ profile: Partial<UserProfile> | null }> = ({ profile }) => {
+  if (!profile) {
+    return <div>No profile data available</div>; // or some other default content
+  }
+
+  const {
+    username = '',
+    joinedDate = '',
+    submittedClaims = 0,
+    learningPoints = 0,
+    accuracyRating = 0,
+  } = profile;
+
   return (
     <GlassCard className="p-6">
       <div className="flex flex-col md:flex-row gap-8">
         <div className="flex-shrink-0">
           <div className="bg-gradient-to-br from-gold-light to-gold-dark w-32 h-32 rounded-full flex items-center justify-center">
             <span className="text-4xl font-bold text-red-900">
-              {profile.username.charAt(0).toUpperCase()}
+              <p className="text-4xl font-bold text-red-900">
+                 {profile?.username?.charAt(0).toUpperCase()}
+              </p>
             </span>
           </div>
         </div>
@@ -29,7 +43,7 @@ const ProfileSection: React.FC<{ profile: UserProfile }> = ({ profile }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div className="bg-red-900 bg-opacity-30 border border-gold rounded-lg p-4">
               <p className="text-cream text-opacity-80">Username</p>
-              <p className="text-xl font-bold text-cream">{profile.username}</p>
+              <p className="text-xl font-bold text-cream">{profile?.username ?? ''}</p>
             </div>
             
             <div className="bg-red-900 bg-opacity-30 border border-gold rounded-lg p-4">
@@ -39,24 +53,24 @@ const ProfileSection: React.FC<{ profile: UserProfile }> = ({ profile }) => {
             
             <div className="bg-red-900 bg-opacity-30 border border-gold rounded-lg p-4">
               <p className="text-cream text-opacity-80">Claims Submitted</p>
-              <p className="text-xl font-bold text-gold">{profile.submittedClaims}</p>
+              <p className="text-xl font-bold text-gold">{profile?.submittedClaims ?? 0}</p>
             </div>
             
             <div className="bg-red-900 bg-opacity-30 border border-gold rounded-lg p-4">
               <p className="text-cream text-opacity-80">Learning Points</p>
-              <p className="text-xl font-bold text-gold">{profile.learningPoints}</p>
+              <p className="text-xl font-bold text-gold">{profile?.learningPoints ?? 0}</p>
             </div>
           </div>
           
           <div className="mb-6">
             <div className="flex justify-between mb-2">
               <span className="text-cream">Fact-Checking Accuracy</span>
-              <span className="text-gold">{profile.accuracyRating}%</span>
+              <span className="text-gold">{profile?.accuracyRating ?? 0}%</span>
             </div>
             <div className="w-full bg-red-900 bg-opacity-20 rounded-full h-4">
               <div 
-                className="bg-gradient-to-r from-gold-light to-gold-dark h-4 rounded-full" 
-                style={{ width: `${profile.accuracyRating}%` }}
+              className="w-full bg-red-900 bg-opacity-20 rounded-full h-4"
+              style={{ width: `${profile?.accuracyRating ?? 0}%` }}
               ></div>
             </div>
           </div>

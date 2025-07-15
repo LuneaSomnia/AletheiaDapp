@@ -4,6 +4,8 @@ import React from 'react';
 interface GlassCardProps {
   children: React.ReactNode;
   className?: string;
+  title?: string;
+  action?: React.ReactNode;
 }
 
 const GlassCard: React.FC<GlassCardProps> = ({ children, className = '' }) => {
