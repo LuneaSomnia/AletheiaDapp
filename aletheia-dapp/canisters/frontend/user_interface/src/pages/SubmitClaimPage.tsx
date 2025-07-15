@@ -12,23 +12,30 @@ const SubmitClaimPage: React.FC = () => {
   const [isLearning, setIsLearning] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = async (
-  claim: string, 
-  claimType: string, 
-  source?: string, 
-  context?: string
-) => {
-  const result = await submitClaim(claim, claimType, source, context);
-  if (result) {
-    setSubmissionResult(result);
-  }
-};
+  const handleFormSubmit = async (data: {
+    claim: string;
+    claimType: string;
+    source?: string;
+    context?: string;
+    tags: string[];
+  }) => {
+    const result = await submitClaim(
+      data.claim, 
+      data.claimType, 
+      data.source, 
+      data.context,
+      data.tags
+    );
+    if (result) {
+      setSubmissionResult(result);
+    }
+  };
 
-return (
-  <div className="min-h-screen p-4">
-    <div className="max-w-4xl mx-auto">
-      {!submissionResult ? (
-        <ClaimForm />
+  return (
+    <div className="min-h-screen p-4">
+      <div className="max-w-4xl mx-auto">
+        {!submissionResult ? (
+          <ClaimForm onSubmit={handleFormSubmit} />
         ) : (
           <div className="space-y-8">
             <GlassCard className="p-8 text-center">

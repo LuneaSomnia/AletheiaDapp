@@ -5,10 +5,13 @@ export const submitClaim = async (
   claim: string, 
   claimType: string, 
   source?: string, 
-  context?: string
+  context?: string,
+  tags: string[] = []
 ) => {
   const actor = await getClaimSubmissionActor();
-  // In production: await actor.submitClaim({ claim, claimType, source, context });
+  // In production: await actor.submitClaim({ claim, claimType, source, context, tags });
+  console.log('Submitting claim with tags:', tags);
+  
   return {
     claimId: `claim-${Date.now()}`,
     questions: [

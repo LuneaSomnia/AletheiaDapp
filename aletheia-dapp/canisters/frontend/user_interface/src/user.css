@@ -88,3 +88,24 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(212, 175, 55, 0.7);
 }
+
+/* New styles for tags */
+.tag-pill {
+  transition: all 0.2s ease;
+}
+
+.tag-pill:hover {
+  background-color: rgba(212, 175, 55, 0.3);
+}
+
+/* AI question mirror animation */
+@keyframes pulse-cyan {
+  0% { box-shadow: 0 0 0 0 rgba(0, 230, 250, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(0, 230, 250, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 230, 250, 0); }
+}
+
+.question-mirror {
+  animation: pulse-cyan 2s infinite;
+  border: 1px solid rgba(0, 230, 250, 0.3);
+}

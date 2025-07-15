@@ -60,3 +60,82 @@ export const completeExercise = async (exerciseId: string, answers: number[]) =>
     correctAnswers: answers.length // Mocking all correct
   };
 };
+
+// AI-powered question generation for claim refinement
+export const generateAISuggestions = async (claim: string, context: string): Promise<string[]> => {
+  try {
+    // In production: 
+    // const actor = await getLearningActor();
+    // return await actor.generateCriticalQuestions(claim, context);
+    
+    // Simulate API call delay
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    // AI-generated questions based on claim content
+    const baseQuestions = [
+      "What evidence would support or refute this claim?",
+      "Who would benefit from this claim being accepted?",
+      "What alternative explanations might exist?",
+      "How does this claim align with established knowledge?",
+      "What are the potential biases in the source of this claim?"
+    ];
+    
+    // Context-aware questions
+    const contextQuestions = context.toLowerCase().includes('health') ? [
+      "What do reputable health organizations say about this?",
+      "Are there peer-reviewed studies supporting this claim?",
+      "What are the potential health risks of this claim?"
+    ] : context.toLowerCase().includes('politic') ? [
+      "What political motivations might be behind this claim?",
+      "How do different political groups interpret this?",
+      "What legislation or policies relate to this claim?"
+    ] : context.toLowerCase().includes('science') ? [
+      "What scientific principles support or contradict this?",
+      "Has this claim been tested experimentally?",
+      "Are there any scientific papers about this topic?"
+    ] : [];
+    
+    // Claim-type specific questions
+    const claimSpecificQuestions = claim.length > 120 ? [
+      "Can this claim be broken down into testable components?"
+    ] : claim.includes('!') || claim.includes('always') || claim.includes('never') ? [
+      "Are there exceptions to this absolute statement?",
+      "What evidence would contradict this absolute claim?",
+      "How might this claim be rephrased to be more accurate?"
+    ] : claim.includes('statistic') ? [
+      "What is the source of this statistic?",
+      "How was this data collected and analyzed?",
+      "Are there other studies with conflicting statistics?"
+    ] : [];
+    
+    // Combine and return unique questions
+    return [...baseQuestions, ...contextQuestions, ...claimSpecificQuestions]
+      .filter((q, i, arr) => arr.indexOf(q) === i) // Remove duplicates
+      .slice(0, 5); // Return max 5 questions
+  } catch (error) {
+    console.error('AI question generation failed:', error);
+    return [
+      "What evidence supports this claim?",
+      "Who might dispute this claim and why?"
+    ];
+  }
+};
+
+// New function to get popular tags from community
+export const getPopularTags = async (): Promise<string[]> => {
+  try {
+    // In production: 
+    // const actor = await getLearningActor();
+    // return await actor.getPopularTags();
+    
+    // Mock popular tags
+    return [
+      "Health", "Politics", "Science", 
+      "Technology", "COVID-19", "Elections",
+      "Climate", "Economy", "Education"
+    ];
+  } catch (error) {
+    console.error('Failed to fetch popular tags:', error);
+    return [];
+  }
+};
