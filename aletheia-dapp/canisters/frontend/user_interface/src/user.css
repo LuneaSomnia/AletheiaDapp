@@ -41,6 +41,36 @@ body {
   opacity: 0.15;
 }
 
+/* Tutorial Elements */
+.tutorial-container {
+  padding: 1.5rem;
+}
+
+.tutorial-progress {
+  display: flex;
+  justify-content: center;
+  margin: 1.5rem 0;
+  gap: 0.5rem;
+}
+
+.tutorial-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.tutorial-card {
+  max-width: 600px;
+  width: 90%;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

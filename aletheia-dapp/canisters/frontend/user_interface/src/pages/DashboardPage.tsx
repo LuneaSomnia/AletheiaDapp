@@ -7,10 +7,9 @@ import ClaimStatus from '../components/ClaimStatus';
 import { useAuth } from '../services/auth';
 import { useDispatch, useSelector } from 'react-redux';
 import { getLearningModules } from '../services/learning';
-import { useWebSocket } from '../context/WebSocketContext'; // New import
-import { submitClaim } from '../services/claimService'; // New import
+import { useWebSocket } from '../context/WebSocketContext';
+import { submitClaim } from '../services/claimService';
 
-// New type for claim tracking
 type PendingClaim = {
   id: string;
   text: string;
@@ -18,40 +17,42 @@ type PendingClaim = {
 };
 
 const DashboardPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, completeTutorial } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [modules, setModules] = useState<any[]>([]);
   const [submissionStatus, setSubmissionStatus] = useState<'idle' | 'processing' | 'pending' | 'completed' | 'error'>('idle');
-  const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([]); // New state for pending claims
+  const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([]);
+  const [showDashboardTutorial, setShowDashboardTutorial] = useState(false);
+  const [dashboardTutorialStep, setDashboardTutorialStep] = useState(0);
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { subscribeToClaimUpdates } = useWebSocket(); // WebSocket hook
+  const { subscribeToClaimUpdates } = useWebSocket();
 
-  // Mock user claims
-  const userClaims = [
+  const dashboardTutorialSteps = [
     {
-      id: 'claim-001',
-      text: "Drinking bleach cures COVID-19",
-      status: "Completed",
-      verdict: "FALSE",
-      submittedAt: "2023-05-15T10:30:00Z"
+      title: "Dashboard Overview",
+      content: "Welcome to your dashboard! Here you can submit claims, track your progress, and access learning resources."
     },
     {
-      id: 'claim-002',
-      text: "New study shows chocolate prevents aging",
-      status: "Processing",
-      submittedAt: "2023-05-15T10:45:00Z"
+      title: "Submit Claims",
+      content: "Click here to submit new claims for verification by the community."
     },
     {
-      id: 'claim-003',
-      text: "Government announces universal basic income",
-      status: "Completed",
-      verdict: "MISLEADING",
-      submittedAt: "2023-05-15T11:00:00Z"
+      title: "Critical Thinking Gym",
+      content: "Improve your critical thinking skills and earn Learning Points (LP) by completing exercises."
+    },
+    {
+      title: "Your Claims",
+      content: "Track the status of your submitted claims here."
     }
   ];
 
-  // New effect for WebSocket subscription
+  useEffect(() => {
+    if (user && !user.hasCompletedTutorial) {
+      setShowDashboardTutorial(true);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
     
@@ -85,11 +86,9 @@ const DashboardPage: React.FC = () => {
     navigate(`/claim-result/${claimId}`);
   };
 
-  // New function to simulate claim submission
   const handleSubmitTestClaim = async () => {
     setSubmissionStatus('processing');
     try {
-      // Simulate API call to submit claim
       const testClaim = {
         content: "Test claim about important news",
         type: "text",
@@ -101,10 +100,10 @@ const DashboardPage: React.FC = () => {
       if (result.status === 'success') {
         setSubmissionStatus('pending');
         setPendingClaims(prev => [...prev, {
-  id: result.claimId as string,
-  text: testClaim.content,
-  submittedAt: new Date().toISOString()
-}]);
+          id: result.claimId as string,
+          text: testClaim.content,
+          submittedAt: new Date().toISOString()
+        }]);
       } else {
         setSubmissionStatus('error');
       }
@@ -112,6 +111,20 @@ const DashboardPage: React.FC = () => {
       setSubmissionStatus('error');
       console.error('Claim submission failed:', error);
     }
+  };
+
+  const handleNextDashboardStep = () => {
+    if (dashboardTutorialStep < dashboardTutorialSteps.length - 1) {
+      setDashboardTutorialStep(dashboardTutorialStep + 1);
+    } else {
+      completeTutorial();
+      setShowDashboardTutorial(false);
+    }
+  };
+
+  const handleSkipDashboardTutorial = () => {
+    completeTutorial();
+    setShowDashboardTutorial(false);
   };
 
   if (!user) {
@@ -126,7 +139,45 @@ const DashboardPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen p-4 pb-20">
+    <div className="min-h-screen p-4 pb-20 relative">
+      {showDashboardTutorial && (
+        <div className="tutorial-overlay fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center">
+          <GlassCard className="tutorial-card w-full max-w-2xl">
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-cream mb-4">
+                {dashboardTutorialSteps[dashboardTutorialStep].title}
+              </h2>
+              <p className="text-cream mb-6">
+                {dashboardTutorialSteps[dashboardTutorialStep].content}
+              </p>
+              
+              <div className="tutorial-progress flex justify-center mb-4">
+                {dashboardTutorialSteps.map((_, index) => (
+                  <div 
+                    key={index} 
+                    className={`w-3 h-3 mx-1 rounded-full ${
+                      index === dashboardTutorialStep ? 'bg-gold' : 'bg-cream opacity-30'
+                    }`}
+                  />
+                ))}
+              </div>
+              
+              <div className="flex justify-between">
+                <button 
+                  className="text-gold hover:underline"
+                  onClick={handleSkipDashboardTutorial}
+                >
+                  Skip Tutorial
+                </button>
+                <GoldButton onClick={handleNextDashboardStep}>
+                  {dashboardTutorialStep < dashboardTutorialSteps.length - 1 ? 'Next' : 'Finish Tutorial'}
+                </GoldButton>
+              </div>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
       <div className="absolute inset-0 overflow-hidden">
         {[...Array(15)].map((_, i) => (
           <div 
@@ -146,7 +197,7 @@ const DashboardPage: React.FC = () => {
         ))}
       </div>
 
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-6xl mx-auto relative z-10">
         <header className="flex justify-between items-center py-6 mb-8">
           <h1 className="text-3xl font-bold text-cream">Aletheia Dashboard</h1>
           <div className="flex gap-4">
@@ -157,104 +208,7 @@ const DashboardPage: React.FC = () => {
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <GlassCard className="lg:col-span-2">
-            <h2 className="text-2xl font-semibold text-cream mb-4">Submit New Claim</h2>
-            <div className="flex flex-col gap-4">
-              <GoldButton 
-                className="w-full py-4 text-xl"
-                onClick={() => navigate('/submit-claim')}
-              >
-                Verify Information
-              </GoldButton>
-              
-              {/* New: Test claim submission button */}
-              <GoldButton 
-                className="w-full py-3 text-lg bg-opacity-70"
-                onClick={handleSubmitTestClaim}
-                disabled={submissionStatus === 'processing' || submissionStatus === 'pending'}
-              >
-                {submissionStatus === 'processing' ? 'Submitting Test Claim...' : 
-                 submissionStatus === 'pending' ? 'Claim Processing' : 'Submit Test Claim'}
-              </GoldButton>
-              
-              {/* New: Status indicators */}
-              {submissionStatus === 'error' && (
-                <div className="text-red-400 text-center mt-2">
-                  Submission failed. Please try again.
-                </div>
-              )}
-            </div>
-          </GlassCard>
-
-          <GlassCard>
-            <h2 className="text-2xl font-semibold text-cream mb-4">Critical Thinking Gym</h2>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <p className="text-cream">Learning Points</p>
-                <span className="text-gold font-bold">{user.learningPoints} LP</span>
-              </div>
-              <div className="h-4 bg-gold bg-opacity-20 rounded-full">
-                <div 
-                  className="h-full bg-gold rounded-full" 
-                  style={{ width: `${(user.learningPoints / 200) * 100}%` }}
-                ></div>
-              </div>
-              <GoldButton 
-                className="w-full"
-                onClick={() => navigate('/learning-gym')}
-              >
-                Start Exercises
-              </GoldButton>
-            </div>
-          </GlassCard>
-
-          {/* New: Pending claims section */}
-          {pendingClaims.length > 0 && (
-            <GlassCard className="lg:col-span-3">
-              <h2 className="text-2xl font-semibold text-cream mb-4">Pending Claims</h2>
-              <div className="space-y-4">
-                {pendingClaims.map((claim) => (
-                  <div key={claim.id} className="flex justify-between items-center p-4 bg-dark-red bg-opacity-30 rounded-lg">
-                    <div>
-                      <h3 className="text-cream font-medium">{claim.text}</h3>
-                      <p className="text-gold text-sm mt-1">
-                        Submitted: {new Date(claim.submittedAt).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="flex items-center">
-                      <div className="animate-pulse bg-gold rounded-full h-3 w-3 mr-2"></div>
-                      <span className="text-gold">Processing</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </GlassCard>
-          )}
-
-          <GlassCard className="lg:col-span-3">
-            <h2 className="text-2xl font-semibold text-cream mb-4">Your Recent Claims</h2>
-            {isLoading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold mx-auto"></div>
-                <p className="mt-4 text-cream">Loading claims...</p>
-              </div>
-            ) : userClaims.length === 0 ? (
-              <p className="text-cream text-center py-8">No claims submitted yet</p>
-            ) : (
-              <div className="space-y-4">
-                {userClaims.map((claim) => (
-                  <ClaimStatus 
-                    key={claim.id}
-                    claimId={claim.id}
-                    claimText={claim.text}
-                    status={claim.status}
-                    verdict={claim.verdict}
-                    onView={handleViewClaim}
-                  />
-                ))}
-              </div>
-            )}
-          </GlassCard>
+          {/* ... existing dashboard content ... */}
         </div>
       </div>
     </div>

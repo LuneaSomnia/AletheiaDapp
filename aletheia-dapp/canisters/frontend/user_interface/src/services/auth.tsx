@@ -8,6 +8,7 @@ interface User {
   username?: string;
   learningPoints: number;
   submittedClaims: string[];
+  hasCompletedTutorial?: boolean; // Added tutorial completion flag
 }
 
 interface AuthContextType {
@@ -15,6 +16,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   authenticate: () => Promise<void>;
   logout: () => Promise<void>;
+  completeTutorial: () => void; // Added method to mark tutorial complete
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,6 +25,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authClient, setAuthClient] = useState<AuthClient | null>(null);
+
+  // Check if tutorial is completed
+  const checkTutorialCompletion = () => {
+    return localStorage.getItem('aletheia_tutorial_completed') === 'true';
+  };
 
   useEffect(() => {
     const initAuth = async () => {
@@ -33,11 +40,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsAuthenticated(true);
         const identity = client.getIdentity();
         const principal = identity.getPrincipal().toString();
-        // Fetch user data from canister in production
+        
         setUser({
           principal,
           learningPoints: 125,
           submittedClaims: ['claim-001', 'claim-002'],
+          hasCompletedTutorial: checkTutorialCompletion()
         });
       }
     };
@@ -61,10 +69,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsAuthenticated(true);
     const identity = authClient.getIdentity();
     const principal = identity.getPrincipal().toString();
+    
     setUser({
       principal,
       learningPoints: 125,
       submittedClaims: ['claim-001', 'claim-002'],
+      hasCompletedTutorial: checkTutorialCompletion()
     });
   };
 
@@ -76,8 +86,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  // Mark tutorial as complete in user state
+  const completeTutorial = () => {
+    if (user) {
+      setUser({
+        ...user,
+        hasCompletedTutorial: true
+      });
+    }
+    localStorage.setItem('aletheia_tutorial_completed', 'true');
+  };
+
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, authenticate, logout }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      isAuthenticated, 
+      authenticate, 
+      logout,
+      completeTutorial
+    }}>
       {children}
     </AuthContext.Provider>
   );
