@@ -1,168 +1,388 @@
-import Principal "mo:base/Principal";
-import HashMap "mo:base/HashMap";
-import Nat "mo:base/Nat";
-import Float "mo:base/Float";
-import Text "mo:base/Text";
 import Array "mo:base/Array";
-import AI_Integration "canister:AI_Integration";
-import UserAccount "canister:UserAccount";
+import Buffer "mo:base/Buffer";
+import HashMap "mo:base/HashMap";
+import Int "mo:base/Int";
+import Iter "mo:base/Iter";
+import Principal "mo:base/Principal";
+import Result "mo:base/Result";
+import Text "mo:base/Text";
+import Time "mo:base/Time";
+import Float "mo:base/Float";
 
-actor {
-  type ModuleId = Nat;
-  type UserId = Principal;
-  
-  type LearningModule = {
-    id : ModuleId;
-    title : Text;
-    content : Text;
-    difficulty : Nat; // 1-5 scale
-    topic : Text;
-    questions : [Question];
-  };
-  
-  type Question = {
-    text : Text;
-    options : [Text];
-    correctIndex : Nat;
-    explanation : Text;
-  };
-  
-  type UserProgress = {
-    completedModules : [ModuleId];
-    currentModule : ?ModuleId;
-    totalXP : Nat;
-    subscriptionCredit : Float; // Percentage discount
-  };
-  
-  private var nextModuleId : ModuleId = 1;
-  private let modules = HashMap.HashMap<ModuleId, LearningModule>(0, Nat.equal, Hash.hash);
-  private let userProgress = HashMap.HashMap<UserId, UserProgress>(0, Principal.equal, Principal.hash);
-  
-  // Create a new learning module
-  public shared ({ caller }) func createModule(title : Text, content : Text, difficulty : Nat, topic : Text) : async ModuleId {
-    let moduleId = nextModuleId;
-    nextModuleId += 1;
+actor class GamifiedLearningCanister() {
+    type UserId = Principal;
+    type ModuleId = Text;
+    type LessonId = Text;
+    type QuestionId = Text;
+    type RewardPoints = Nat;
+
+    public type Answer = {
+        questionId : QuestionId;
+        selectedOption : Text;
+    };
+
+    public type Question = {
+        id : QuestionId;
+        questionText : Text;
+        options : [Text];
+        correctOption : Text;
+        explanation : Text;
+    };
+
+    public type Lesson = {
+        id : LessonId;
+        title : Text;
+        content : Text;
+        questions : [Question];
+        rewardPoints : RewardPoints;
+    };
+
+    public type Module = {
+        id : ModuleId;
+        title : Text;
+        description : Text;
+        lessons : [Lesson];
+    };
+
+    public type LessonProgress = {
+        lessonId : LessonId;
+        completed : Bool;
+        score : Float;
+        lastAttempted : Int;
+    };
+
+    public type UserProgress = {
+        userId : UserId;
+        completedModules : [ModuleId];
+        lessonProgress : [LessonProgress];
+        totalRewardPoints : RewardPoints;
+    };
+
+    public type QuizResult = {
+        score : Float;
+        correctAnswers : Nat;
+        totalQuestions : Nat;
+        rewardPointsEarned : RewardPoints;
+    };
+
+    // State
+    stable var modules : [Module] = [];
+    stable var userProgressEntries : [(UserId, UserProgress)] = [];
     
-    let newModule : LearningModule = {
-      id = moduleId;
-      title = title;
-      content = content;
-      difficulty = difficulty;
-      topic = topic;
-      questions = generateQuestions(content);
-    };
-    
-    modules.put(moduleId, newModule);
-    moduleId;
-  };
-  
-  // Generate questions for a module (simplified)
-  private func generateQuestions(content : Text) : [Question] {
-    // In production, this would use AI to generate questions
-    [{
-      text = "What is the main topic of this module?";
-      options = ["Critical Thinking", "Fact Checking", "Media Literacy", "All of the above"];
-      correctIndex = 3;
-      explanation = "The module covers all these aspects of information verification.";
-    }];
-  };
-  
-  // Generate personalized module using AI
-  public shared ({ caller }) func generatePersonalizedModule(topic : Text) : async Result.Result<LearningModule, Text> {
-    try {
-      let userData = switch (userProgress.get(caller)) {
-        case (null) { "new user" };
-        case (?progress) { "experienced user with " # Nat.toText(progress.totalXP) # " XP" };
-      };
-      
-      let prompt = "Create a critical thinking learning module about " # topic 
-        # " for " # userData # ". Include 3 multiple-choice questions.";
-      
-      let aiResponse = await AI_Integration.generateContent(prompt);
-      
-      let newModuleId = nextModuleId;
-      nextModuleId += 1;
-      
-      let newModule : LearningModule = {
-        id = newModuleId;
-        title = "AI-Generated: " # topic;
-        content = aiResponse;
-        difficulty = 3; // Default difficulty
-        topic = topic;
-        questions = parseAIQuestions(aiResponse);
-      };
-      
-      modules.put(newModuleId, newModule);
-      
-      // Assign to user
-      assignModuleToUser(caller, newModuleId);
-      
-      #ok(newModule);
-    } catch (e) {
-      #err("Failed to generate module: " # Error.message(e));
-    };
-  };
-  
-  // Simplified parser for demo
-  private func parseAIQuestions(content : Text) : [Question] {
-    // In production, this would parse structured AI response
-    [{
-      text = "What did you learn from this module?";
-      options = ["Critical evaluation", "Source checking", "Bias detection", "All of the above"];
-      correctIndex = 3;
-      explanation = "This module covered all these essential skills.";
-    }];
-  };
-  
-  private func assignModuleToUser(user : UserId, moduleId : ModuleId) {
-    let progress = switch (userProgress.get(user)) {
-      case (null) { { completedModules = []; currentModule = ?moduleId; totalXP = 0; subscriptionCredit = 0.0 } };
-      case (?p) { { p with currentModule = ?moduleId } };
-    };
-    userProgress.put(user, progress);
-  };
-  
-  // Complete a module and award XP
-  public shared ({ caller }) func completeModule(moduleId : ModuleId, score : Float) : async Result.Result<Nat, Text> {
-    switch (modules.get(moduleId)) {
-      case (null) { #err("Module not found") };
-      case (?learningmodule) {
-        let xpEarned = calculateXP(learningmodule.difficulty, score);
-        let progress = switch (userProgress.get(caller)) {
-          case (null) { 
-            let newProgress : UserProgress = {
-              completedModules = [moduleId];
-              currentModule = null;
-              totalXP = xpEarned;
-              subscriptionCredit = Float.fromInt(xpEarned) / 1000.0;
-            };
-            newProgress
-          };
-          case (?p) {
-            let newCompleted = Array.append(p.completedModules, [moduleId]);
-            let newXP = p.totalXP + xpEarned;
-            let newCredit = p.subscriptionCredit + (Float.fromInt(xpEarned) / 1000.0);
-            { 
-              completedModules = newCompleted; 
-              currentModule = null;
-              totalXP = newXP;
-              subscriptionCredit = newCredit;
+    var userProgress = HashMap.HashMap<UserId, UserProgress>(
+        0,
+        Principal.equal,
+        Principal.hash
+    );
+
+    // Initialize with sample modules
+    public func seedModules() : async () {
+        modules := [
+            {
+                id = "digital-literacy-101";
+                title = "Digital Literacy Fundamentals";
+                description = "Learn essential digital skills for the modern world";
+                lessons = [
+                    {
+                        id = "internet-basics";
+                        title = "Internet Fundamentals";
+                        content = "Understanding how the internet works, browsers, and websites...";
+                        rewardPoints = 50;
+                        questions = [
+                            {
+                                id = "q1";
+                                questionText = "What does URL stand for?";
+                                options = [
+                                    "Uniform Resource Locator",
+                                    "Universal Reference Link",
+                                    "Unified Resource Library",
+                                    "Uniform Retrieval Location"
+                                ];
+                                correctOption = "Uniform Resource Locator";
+                                explanation = "A URL (Uniform Resource Locator) is the address of a resource on the internet.";
+                            },
+                            {
+                                id = "q2";
+                                questionText = "Which protocol is used for secure web browsing?";
+                                options = ["HTTP", "FTP", "HTTPS", "SMTP"];
+                                correctOption = "HTTPS";
+                                explanation = "HTTPS (HyperText Transfer Protocol Secure) encrypts data between your browser and websites.";
+                            }
+                        ];
+                    },
+                    {
+                        id = "online-safety";
+                        title = "Online Safety Practices";
+                        content = "Protecting yourself and your data online...";
+                        rewardPoints = 75;
+                        questions = [
+                            {
+                                id = "q1";
+                                questionText = "What's the strongest type of password?";
+                                options = [
+                                    "Short dictionary words",
+                                    "Long phrases with mixed characters",
+                                    "Your pet's name",
+                                    "12345678"
+                                ];
+                                correctOption = "Long phrases with mixed characters";
+                                explanation = "Long passphrases with upper/lower case letters, numbers and symbols are most secure.";
+                            }
+                        ];
+                    }
+                ];
+            },
+            {
+                id = "web3-fundamentals";
+                title = "Web3 Essentials";
+                description = "Understanding blockchain, crypto, and decentralized systems";
+                lessons = [
+                    {
+                        id = "blockchain-basics";
+                        title = "Blockchain Technology";
+                        content = "How blockchains work and their key features...";
+                        rewardPoints = 100;
+                        questions = [];
+                    }
+                ];
             }
-          };
-        };
-        
-        userProgress.put(caller, progress);
-        
-        // Apply subscription credit to user account
-        await UserAccount.applySubscriptionCredit(caller, progress.subscriptionCredit);
-        
-        #ok(progress.totalXP);
-      };
+        ];
     };
-  };
-  
-  private func calculateXP(difficulty : Nat, score : Float) : Nat {
-    let baseXP = difficulty * 20;
-    Float.toInt(Float.fromInt(baseXP) * score)
-  };
+
+    // Public interface
+    public shared query func getAvailableModules() : async [Module] {
+        // Return modules without answers
+        Array.map<Module, Module>(
+            modules,
+            func(m) {
+                {
+                    id = m.id;
+                    title = m.title;
+                    description = m.description;
+                    lessons = Array.map<Lesson, Lesson>(
+                        m.lessons,
+                        func(lesson) {
+                            {
+                                id = lesson.id;
+                                title = lesson.title;
+                                content = lesson.content;
+                                rewardPoints = lesson.rewardPoints;
+                                questions = [];
+                            };
+                        }
+                    );
+                };
+            }
+        );
+    };
+
+    public shared query func getLessonContent(moduleId : ModuleId, lessonId : LessonId) : async Result.Result<Lesson, Text> {
+        switch (findLesson(moduleId, lessonId)) {
+            case (null) { #err("Lesson not found") };
+            case (?lesson) {
+                // Return lesson without correct answers
+                let sanitizedLesson : Lesson = {
+                    id = lesson.id;
+                    title = lesson.title;
+                    content = lesson.content;
+                    rewardPoints = lesson.rewardPoints;
+                    questions = Array.map<Question, Question>(
+                        lesson.questions,
+                        func(q) {
+                            {
+                                id = q.id;
+                                questionText = q.questionText;
+                                options = q.options;
+                                correctOption = "";
+                                explanation = "";
+                            };
+                        }
+                    );
+                };
+                #ok(sanitizedLesson);
+            };
+        };
+    };
+
+    public shared (msg) func submitLessonAnswers(
+        moduleId : ModuleId,
+        lessonId : LessonId,
+        answers : [Answer]
+    ) : async Result.Result<QuizResult, Text> {
+        let userId = msg.caller;
+        switch (findLesson(moduleId, lessonId)) {
+            case (null) { #err("Lesson not found") };
+            case (?lesson) {
+                // Calculate score
+                let totalQuestions = lesson.questions.size();
+                var correctAnswers = 0;
+
+                for (answer in answers.vals()) {
+                    switch (Array.find(lesson.questions, func(q : Question) : Bool { q.id == answer.questionId })) {
+                        case (null) {};
+                        case (?question) {
+                            if (question.correctOption == answer.selectedOption) {
+                                correctAnswers += 1;
+                            };
+                        };
+                    };
+                };
+
+                let score = if (totalQuestions > 0) {
+                    (Float.fromInt(correctAnswers) / Float.fromInt(totalQuestions)) * 100.0;
+                } else {
+                    100.0; // Lessons without questions are auto-completed
+                };
+
+                // Update progress
+                let rewardPoints = if (score >= 80.0) { lesson.rewardPoints } else { 0 };
+                updateUserProgress(userId, moduleId, lessonId, score, rewardPoints);
+
+                #ok({
+                    score = score;
+                    correctAnswers = correctAnswers;
+                    totalQuestions = totalQuestions;
+                    rewardPointsEarned = rewardPoints;
+                });
+            };
+        };
+    };
+
+    public shared query (msg) func getUserProgress() : async UserProgress {
+        let userId = msg.caller;
+        switch (userProgress.get(userId)) {
+            case (null) {
+                createDefaultProgress(userId);
+            };
+            case (?progress) { progress };
+        };
+    };
+
+    // Internal helper functions
+    func findLesson(moduleId : ModuleId, lessonId : LessonId) : ?Lesson {
+    let m = Array.find(
+        modules,
+        func(m : Module) : Bool { m.id == moduleId }
+    );
+
+    switch (m) {
+        case (null) { null };
+        case (?m) {
+            Array.find(
+                m.lessons,
+                func(lesson : Lesson) : Bool { lesson.id == lessonId }
+            );
+        };
+    };
+};
+
+    func updateUserProgress(
+        userId : UserId,
+        moduleId : ModuleId,
+        lessonId : LessonId,
+        score : Float,
+        rewardPoints : RewardPoints
+    ) {
+        let currentProgress = switch (userProgress.get(userId)) {
+            case (null) { createDefaultProgress(userId) };
+            case (?progress) { progress };
+        };
+
+        let isCompleted = score >= 80.0;
+        let now = Time.now();
+
+        // Update lesson progress
+        var newProgress = Buffer.fromArray<LessonProgress>(currentProgress.lessonProgress);
+        switch (Array.find(newProgress.toArray(), func(lp : LessonProgress) : Bool { lp.lessonId == lessonId })) {
+            case (null) {
+                newProgress.add({
+                    lessonId = lessonId;
+                    completed = isCompleted;
+                    score = score;
+                    lastAttempted = now;
+                });
+            };
+            case (?lp) {
+                newProgress := Buffer.map<UserProgress.LessonProgress, LessonProgress>(
+                    newProgress,
+                    func(lp) {
+                        if (lp.lessonId == lessonId) {
+                            {
+                                lessonId = lessonId;
+                                completed = lp.completed or isCompleted;
+                                score = Float.max(lp.score, score);
+                                lastAttempted = now;
+                            };
+                        } else {
+                            lp;
+                        };
+                    }
+                );
+            };
+        };
+
+        // Update completed modules
+        let completedModules = if (isModuleComplete(moduleId, newProgress.toArray())) {
+            if (Array.find(currentProgress.completedModules, func(mid : ModuleId) : Bool { mid == moduleId }) == null) {
+                Buffer.fromArray<ModuleId>(currentProgress.completedModules).add(moduleId).toArray();
+            } else {
+                currentProgress.completedModules;
+            };
+        } else {
+            currentProgress.completedModules;
+        };
+
+        // Update rewards
+        let newRewards = currentProgress.totalRewardPoints + rewardPoints;
+
+        let updatedProgress : UserProgress = {
+            userId = userId;
+            completedModules = completedModules;
+            lessonProgress = newProgress.toArray();
+            totalRewardPoints = newRewards;
+        };
+
+        userProgress.put(userId, updatedProgress);
+    };
+
+    func isModuleComplete(moduleId : ModuleId, progress : [LessonProgress]) : Bool {
+    switch (Array.find(modules, func(m : Module) : Bool { m.id == moduleId })) {
+        case (null) { false };
+        case (?m) {
+            Array.all(
+                m.lessons,
+                func(lesson : Lesson) : Bool {
+                    switch (Array.find(progress, func(p : LessonProgress) : Bool { p.lessonId == lesson.id })) {
+                        case (null) { false };
+                        case (?lp) { lp.completed };
+                    };
+                }
+            );
+        };
+    };
+};
+
+    func createDefaultProgress(userId : UserId) : UserProgress {
+        {
+            userId = userId;
+            completedModules = [];
+            lessonProgress = [];
+            totalRewardPoints = 0;
+        };
+    };
+
+    // Upgrade hooks
+    system func preupgrade() {
+        userProgressEntries := Iter.toArray(userProgress.entries());
+    };
+
+    system func postupgrade() {
+        userProgress := HashMap.fromIter<UserId, UserProgress>(
+            userProgressEntries.vals(),
+            userProgressEntries.size(),
+            Principal.equal,
+            Principal.hash
+        );
+        userProgressEntries := [];
+    };
 };
