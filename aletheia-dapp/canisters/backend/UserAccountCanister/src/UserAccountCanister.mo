@@ -7,6 +7,11 @@ import Array "mo:base/Array";
 import Time "mo:base/Time";
 import Result "mo:base/Result";
 import Iter "mo:base/Iter";
+import Random "mo:base/Random";
+import Blob "mo:base/Blob";
+import Nat8 "mo:base/Nat8";
+import Nat "mo:base/Nat";
+import Debug "mo:base/Debug";
 
 actor UserAccountCanister {
     // Types
@@ -21,11 +26,11 @@ actor UserAccountCanister {
     };
 
     public type UserSettings = {
-    notifications : Bool;
-    privacyLevel : { #basic; #enhanced; #maximum };
-    language : { #en; #es; #fr; #de };
-    theme : { #light; #dark; #default };
-};
+        notifications : Bool;
+        privacyLevel : { #basic; #enhanced; #maximum };
+        language : { #en; #es; #fr; #de };
+        theme : { #light; #dark; #default };
+    };
 
     public type ActivityRecord = {
         claimId : Text;
@@ -38,10 +43,10 @@ actor UserAccountCanister {
     stable var anonymousMappings : [(AnonymousId, UserId)] = [];
     stable var activityLogs : [(UserId, [ActivityRecord])] = [];
 
-    // Runtime storage
-    let userProfiles = HashMap.HashMap<UserId, UserProfile>(0, Principal.equal, Principal.hash);
-    let anonymousIdToUser = HashMap.HashMap<AnonymousId, UserId>(0, Text.equal, Text.hash);
-    let userActivities = HashMap.HashMap<UserId, [ActivityRecord]>(0, Principal.equal, Principal.hash);
+    // Runtime storage (var for upgrade handling)
+    var userProfiles = HashMap.HashMap<UserId, UserProfile>(0, Principal.equal, Principal.hash);
+    var anonymousIdToUser = HashMap.HashMap<AnonymousId, UserId>(0, Text.equal, Text.hash);
+    var userActivities = HashMap.HashMap<UserId, [ActivityRecord]>(0, Principal.equal, Principal.hash);
 
     // Initialize from stable storage
     system func preupgrade() {
@@ -75,9 +80,21 @@ actor UserAccountCanister {
         }
     };
 
-    // Generate anonymous ID
-    func generateAnonymousId() : AnonymousId {
-        UUID.toText(await UUID.UUID());
+    // Generate random hexadecimal string for anonymous IDs
+    func generateAnonymousId() : async AnonymousId {
+        let random = await Random.blob();
+        let bytes = Blob.toArray(random);
+        toHex(Array.tabulate(16, func(i) { 
+            if (i < bytes.size()) bytes[i] else 0 
+        }));
+    };
+
+    // Convert byte array to hexadecimal string
+    func toHex(bytes : [Nat8]) : Text {
+        let hexChars = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"];
+        Array.foldLeft<Nat8, Text>(bytes, "", func (acc, byte) {
+            acc # hexChars[Nat8.toNat(byte >> 4)] # hexChars[Nat8.toNat(byte & 0x0F)]
+        })
     };
 
     // User registration
@@ -97,7 +114,7 @@ actor UserAccountCanister {
             };
             case null {
                 // Create new profile
-                let anonymousId = generateAnonymousId();
+                let anonymousId = await generateAnonymousId();
                 let newProfile : UserProfile = {
                     id = caller;
                     anonymousId;
