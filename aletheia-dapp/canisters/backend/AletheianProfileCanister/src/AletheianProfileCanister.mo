@@ -50,11 +50,11 @@ actor AletheianProfileCanister {
         "aletheia-guidelines"
     ];
 
-    let profiles = HashMap.HashMap<Principal, AletheianProfile>(
+    var profiles = HashMap.HashMap<Principal, AletheianProfile>(
         0, Principal.equal, Principal.hash
     );
     
-    let registrationRequests = HashMap.HashMap<Principal, RegistrationRequest>(
+    var registrationRequests = HashMap.HashMap<Principal, RegistrationRequest>(
         0, Principal.equal, Principal.hash
     );
 
@@ -82,10 +82,10 @@ actor AletheianProfileCanister {
     };
 
     system func postupgrade() {
-        var profiles = HashMap.fromIter<Principal, AletheianProfile>(
+        profiles := HashMap.fromIter<Principal, AletheianProfile>(
             profilesEntries.vals(), 0, Principal.equal, Principal.hash
         );
-        var registrationRequests = HashMap.fromIter<Principal, RegistrationRequest>(
+        registrationRequests := HashMap.fromIter<Principal, RegistrationRequest>(
             requestsEntries.vals(), 0, Principal.equal, Principal.hash
         );
         profilesEntries := [];
@@ -265,28 +265,14 @@ actor AletheianProfileCanister {
     // Badge Management
     // ======================
     
-    // ... (previous code)
-
-// Custom function to compare ranks
-func rankIsHigher(rank1: Rank, rank2: Rank): Bool {
-  switch (rank1, rank2) {
-    case (#Master, _) true;
-    case (#Expert, #Master) false;
-    case (#Expert, _) true;
-    case (#Senior, #Master) false;
-    case (#Senior, #Expert) false;
-    case (#Senior, _) true;
-    case (#Associate, #Master) false;
-    case (#Associate, #Expert) false;
-    case (#Associate, #Senior) false;
-    case (#Associate, _) true;
-    case (#Junior, #Master) false;
-    case (#Junior, #Expert) false;
-    case (#Junior, #Senior) false;
-    case (#Junior, #Associate) false;
-    case (#Junior, _) true;
-    case (#Trainee, _) false;
-  }
+    // Custom function to compare ranks
+   func rankIsHigher(rank1: Rank, rank2: Rank): Bool {
+  if (rank1 == #Master) return true;
+  if (rank1 == #Expert and rank2 != #Master) return true;
+  if (rank1 == #Senior and rank2 != #Master and rank2 != #Expert) return true;
+  if (rank1 == #Associate and rank2 != #Master and rank2 != #Expert and rank2 != #Senior) return true;
+  if (rank1 == #Junior and rank2 != #Master and rank2 != #Expert and rank2 != #Senior and rank2 != #Associate) return true;
+  return false;
 };
 
     /// Apply for an expertise badge
@@ -299,8 +285,8 @@ func rankIsHigher(rank1: Rank, rank2: Rank): Bool {
             case (?profile) {
                 // Check rank requirement (Senior+)
                 if (not rankIsHigher(profile.rank, #Senior)) {
-  return #err("Requires Senior rank or higher");
-};
+                    return #err("Requires Senior rank or higher");
+                };
                 
                 // Check if already has badge
                 if (Array.find(profile.expertiseBadges, func (b : Text) : Bool = b == badge) != null) {
@@ -397,6 +383,17 @@ func rankIsHigher(rank1: Rank, rank2: Rank): Bool {
             };
         };
     };
+
+    /// Activity heartbeat to track availability
+    public shared ({ caller }) func heartbeat() : async () {
+        switch (profiles.get(caller)) {
+            case null { };
+            case (?profile) {
+                let updatedProfile = { profile with lastActive = Time.now() };
+                ignore profiles.replace(caller, updatedProfile);
+            };
+        };
+    };
     
     // ======================
     // Query Functions
@@ -409,7 +406,7 @@ func rankIsHigher(rank1: Rank, rank2: Rank): Bool {
     public query func getAletheiansByRank(minRank : Rank) : async [AletheianProfile] {
         let buffer = Buffer.Buffer<AletheianProfile>(0);
         for (profile in profiles.vals()) {
-            if (not rankIsHigher(profile.rank, #Senior)) {
+            if (not rankIsHigher(minRank, profile.rank)) {
                 buffer.add(profile);
             };
         };
@@ -435,28 +432,25 @@ func rankIsHigher(rank1: Rank, rank2: Rank): Bool {
     // ======================
     
     /// Clean up inactive profiles (called periodically)
-    public shared ({ caller }) func purgeInactiveAletheians(
-    inactiveDays : Nat
-) : async () {
-    // In real implementation, add admin check
-    let now = Time.now();
-    let secondsInDay = 24 * 60 * 60 * 1_000_000_000; // nanoseconds in a day
-        
-    for ((principal, profile) in profiles.entries()) {
-        if (profile.status != #Active) 
-        continue; 
-        
-        let timeDiff = now - profile.lastActive;
-        let daysInactive = timeDiff / secondsInDay;
-        
-        if (daysInactive > inactiveDays) {
-            // Mark as retired after prolonged inactivity
-            let updatedProfile = {
-                profile with
-                status = #Retired;
+    public shared ({ caller }) func purgeInactiveAletheians(inactiveDays : Nat) : async () {
+        // In real implementation, add admin check
+        let now = Time.now();
+        let secondsInDay = 24 * 60 * 60 * 1_000_000_000; // nanoseconds in a day
+
+        for ((principal, profile) in profiles.entries()) {
+            if (profile.status == #Active) {
+                let timeDiff = now - profile.lastActive;
+                let daysInactive = timeDiff / secondsInDay;
+                
+                if (daysInactive > inactiveDays) {
+                    // Mark as retired after prolonged inactivity
+                    let updatedProfile = {
+                        profile with
+                        status = #Retired;
+                    };
+                    profiles.put(principal, updatedProfile);
+                };
             };
-            profiles.put(principal, updatedProfile);
         };
     };
-};
 };
