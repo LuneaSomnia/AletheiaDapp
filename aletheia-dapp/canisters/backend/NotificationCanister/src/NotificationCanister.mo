@@ -6,8 +6,8 @@ import Iter "mo:base/Iter";
 import Principal "mo:base/Principal";
 import Time "mo:base/Time";
 import TrieMap "mo:base/TrieMap";
-import Types "./Types";
-import Utils "./Utils";
+import Types "Types";
+import Utils "Utils";
 
 actor class NotificationCanister(initialAdmins: [Principal]) = this {
     type Notification = Types.Notification;
@@ -120,7 +120,8 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
     public shared({ caller }) func updateSettings(
         inApp: ?Bool,
         push: ?Bool,
-        email: ?Bool
+        email: ?Bool,
+        disabledTypes: ?[NotificationType]
     ) : async UserSettings {
         validateCaller(caller);
         let settings : UserSettings = switch (userSettings.get(caller)) {
@@ -130,6 +131,7 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
                     push = false;
                     email = false;
                     pushTokens = [];
+                    disabledTypes = [];
                 }
             };
             case (?s) { s };
@@ -140,6 +142,7 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
             push = Utils.optionOrDefault(push, settings.push);
             email = Utils.optionOrDefault(email, settings.email);
             pushTokens = settings.pushTokens;
+            disabledTypes = Utils.optionOrDefault(disabledTypes, settings.disabledTypes);
         };
 
         userSettings.put(caller, newSettings);
@@ -155,6 +158,7 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
                     push = true;
                     email = false;
                     pushTokens = [];
+                    disabledTypes = [];
                 };
                 userSettings.put(caller, defaultSettings);
                 defaultSettings
@@ -192,6 +196,7 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
                     push = false;
                     email = false;
                     pushTokens = [];
+                    disabledTypes = [];
                 }
             };
             case (?settings) { settings };
@@ -208,6 +213,16 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
         // Authorization check
         if (not isAllowedCanister(caller) and not isAdmin(caller)) {
             throw Error.reject("Unauthorized: Only allowed canisters can send notifications");
+        };
+
+        // Check if user has disabled this notification type
+        switch (userSettings.get(userId)) {
+            case (?settings) {
+                if (Utils.contains(settings.disabledTypes, notifType, func(a, b) { a == b })) {
+                    throw Error.reject("Notification type disabled by user");
+                };
+            };
+            case (_) {};
         };
 
         let id = nextNotificationId;
@@ -286,10 +301,10 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
         for (notification in notifications.vals()) {
             if (notification.userId == caller and
                 notification.timestamp >= cutoff and
-                (!filterUnread or not notification.read)) 
+                (not filterUnread or not notification.read)) 
             {
                 userNotifs.add(notification);
-                if (userNotifs.size() >= maxResults) break;
+                if (userNotifs.size() >= maxResults) break
             };
         };
 
@@ -304,6 +319,8 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
         );
         sorted
     };
+};
+};
 
     // ===== PUSH PROCESSING INTERFACE =====
     public shared({ caller }) func getPendingPushNotifications(
