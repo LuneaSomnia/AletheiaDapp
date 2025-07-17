@@ -16,9 +16,11 @@ shared({ caller = initializer }) actor class ReputationLogicCanister() = this {
     public type Timestamp = Int;
 
     public type PenaltyType = {
-        #minor;
-        #major;
-        #threshold;
+        #incorrectVerification;      // -20 XP
+        #minorBreach;                // -5 XP
+        #repeatedMinorBreach;        // -10 XP
+        #majorBreach;                // -50 XP
+        #taskIncomplete;             // -5 XP
     };
 
     public type UserReputation = {
@@ -29,23 +31,62 @@ shared({ caller = initializer }) actor class ReputationLogicCanister() = this {
     };
 
     public type ReputationUpdate = {
-        #reward : { xp : XP; credits : Credits };
+        #reward : { 
+            xp : XP; 
+            credits : Credits;
+            rewardType : {
+                #baseVerification;
+                #complexityBonus;
+                #accuracyBonus;
+                #speedBonus;
+                #seniorEscalation;
+                #councilResolution;
+                #trainingModule;
+                #duplicateIdentification;
+            };
+        };
         #penalty : PenaltyType;
     };
 
     // ========== CONSTANTS ==========
-    let MINOR_PENALTY_XP = 5;
-    let MINOR_PENALTY_CREDITS = 25;
-    let MAJOR_PENALTY_XP = 15;
-    let MAJOR_PENALTY_CREDITS = 75;
-    let THRESHOLD_PENALTY_XP = 30;
-    let THRESHOLD_PENALTY_CREDITS = 150;
+    // XP Rewards (from documentation)
+    let BASE_VERIFICATION_XP = 10;
+    let COMPLEXITY_LOW_BONUS = 0;
+    let COMPLEXITY_MED_BONUS = 5;
+    let COMPLEXITY_HIGH_BONUS = 10;
+    let ACCURACY_BONUS = 5;
+    let SPEED_BONUS = 3;
+    let SENIOR_ESCALATION_XP = 15;
+    let COUNCIL_RESOLUTION_XP = 25;
+    let TRAINING_MODULE_MIN_XP = 5;
+    let TRAINING_MODULE_MAX_XP = 20;
+    let DUPLICATE_ID_XP = 2;
+
+    // XP Penalties (from documentation)
+    let INCORRECT_VERIFICATION_PENALTY = 20;
+    let MINOR_BREACH_PENALTY = 5;
+    let REPEATED_MINOR_BREACH_PENALTY = 10;
+    let MAJOR_BREACH_PENALTY = 50;
+    let TASK_INCOMPLETE_PENALTY = 5;
+    let THRESHOLD_PENALTY = 30;
+
+    // Credit penalties (maintain existing ratios)
+    let CREDIT_MULTIPLIER = 5;
+    let THRESHOLD_CREDIT_PENALTY = THRESHOLD_PENALTY * CREDIT_MULTIPLIER;
+
+    // Warning system
     let WARNING_DECAY_DAYS = 30; // Days after which warnings decay
     let WARNING_THRESHOLD = 3;   // Warning level that triggers threshold penalty
 
+    // Rank thresholds (from documentation)
+    let JUNIOR_MAX = 249;
+    let ASSOCIATE_MAX = 749;
+    let SENIOR_MAX = 1999;
+    let EXPERT_MAX = 4999;
+
     // ========== STABLE STORAGE ==========
     stable var userReputationEntries : [(UserId, UserReputation)] = [];
-    stable var version : Nat = 1;
+    stable var version : Nat = 2; // Bumped for new implementation
 
     // ========== STATE VARIABLES ==========
     var userReputations = HashMap.HashMap<UserId, UserReputation>(
@@ -104,27 +145,36 @@ shared({ caller = initializer }) actor class ReputationLogicCanister() = this {
         _applyWarningDecay(current, Time.now())
     };
 
+    /// Gets user's current rank based on XP
+    public query func getRank(user: UserId) : async Text {
+        let rep = _getOrInitUser(user);
+        _computeRank(rep.xp)
+    };
+
     // ========== PRIVATE LOGIC ==========
     // Applies penalty based on type and updates warnings
     func _applyPenalty(current : UserReputation, penaltyType : PenaltyType, now : Timestamp) : UserReputation {
-        let (xpDeduction, creditDeduction, warningIncrement) = switch(penaltyType) {
-            case (#minor) { (MINOR_PENALTY_XP, MINOR_PENALTY_CREDITS, 1) };
-            case (#major) { (MAJOR_PENALTY_XP, MAJOR_PENALTY_CREDITS, 2) };
-            case (#threshold) { (THRESHOLD_PENALTY_XP, THRESHOLD_PENALTY_CREDITS, 0) };
+        let (xpDeduction, warningIncrement) = switch(penaltyType) {
+            case (#incorrectVerification) { (INCORRECT_VERIFICATION_PENALTY, 1) };
+            case (#minorBreach) { (MINOR_BREACH_PENALTY, 1) };
+            case (#repeatedMinorBreach) { (REPEATED_MINOR_BREACH_PENALTY, 1) };
+            case (#majorBreach) { (MAJOR_BREACH_PENALTY, 2) };
+            case (#taskIncomplete) { (TASK_INCOMPLETE_PENALTY, 0) };
         };
+        
+        let creditDeduction = xpDeduction * CREDIT_MULTIPLIER;
         
         // Apply penalty
         let newXP = _safeSubtract(current.xp, xpDeduction);
         let newCredits = _safeSubtract(current.credits, creditDeduction);
-        var newWarnings = current.warnings + warningIncrement;
+        let newWarnings = current.warnings + warningIncrement;
         
-        // Handle threshold penalty
+        // Handle threshold penalty if warnings exceed threshold
         if (newWarnings >= WARNING_THRESHOLD) {
-            newWarnings := 0; // Reset warnings after threshold penalty
             return {
-                xp = _safeSubtract(newXP, THRESHOLD_PENALTY_XP);
-                credits = _safeSubtract(newCredits, THRESHOLD_PENALTY_CREDITS);
-                warnings = newWarnings;
+                xp = _safeSubtract(newXP, THRESHOLD_PENALTY);
+                credits = _safeSubtract(newCredits, THRESHOLD_CREDIT_PENALTY);
+                warnings = 0; // Reset warnings after threshold penalty
                 lastWarning = ?now
             };
         };
@@ -137,13 +187,28 @@ shared({ caller = initializer }) actor class ReputationLogicCanister() = this {
         }
     };
 
+    // Computes rank based on XP
+    func _computeRank(xp : XP) : Text {
+        if (xp <= JUNIOR_MAX) {
+            "Junior Aletheian"
+        } else if (xp <= ASSOCIATE_MAX) {
+            "Associate Aletheian"
+        } else if (xp <= SENIOR_MAX) {
+            "Senior Aletheian"
+        } else if (xp <= EXPERT_MAX) {
+            "Expert Aletheian"
+        } else {
+            "Master Aletheian / Elder"
+        }
+    };
+
     // Applies warning decay based on time
     func _applyWarningDecay(current : UserReputation, now : Timestamp) : UserReputation {
         switch(current.lastWarning) {
             case null { current };
             case (?lastWarning) {
                 let secondsSinceWarning = now - lastWarning;
-                let daysSinceWarning = Nat64.toNat(Nat64.fromIntWrap(secondsSinceWarning / (24 * 3600 * 1_000_000_000)));
+                let daysSinceWarning = Int.abs(secondsSinceWarning / (24 * 3600 * 1_000_000_000));
                 
                 if (daysSinceWarning >= WARNING_DECAY_DAYS and current.warnings > 0) {
                     let decayAmount = Nat.min(current.warnings, daysSinceWarning / WARNING_DECAY_DAYS);
@@ -182,11 +247,11 @@ shared({ caller = initializer }) actor class ReputationLogicCanister() = this {
         }
     };
 
-    // Authorization check (simplified - expand for production)
+    // Authorization check (placeholder - implement proper auth in production)
     func _isAuthorized(caller : Principal) : Bool {
-        // Implement proper authorization logic
-        // For now, allow only self and parent canisters
-        true
+        // In production: verify caller is from Aletheia system
+        // For now, allow only initializer (parent canister)
+        caller == initializer
     };
 
     // ========== VERSIONING ==========

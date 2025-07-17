@@ -268,10 +268,11 @@ actor EscalationCanister {
                 await updateInitialReputations(claimId, claim.initialFindings, v);
             };
             case null {
-                // Even council can't decide - use plurality or first found
-                let verdicts = extractVerdicts(claim.councilFindings);
-                let v = if (verdicts.size() > 0) verdicts[0] else "Unresolved";
-                await finalizeClaim(claimId, v);
+                // Even council can't reach majority - mark as inconclusive
+                let inconclusive = "Inconclusive";
+                await finalizeClaim(claimId, inconclusive);
+                await updateCouncilReputations(claimId, claim.councilFindings, inconclusive);
+                // Do not update senior/initial reputations for inconclusive claims
             };
         };
     };
@@ -301,9 +302,12 @@ actor EscalationCanister {
         findings : [(Principal, Finding)],
         finalVerdict : Verdict
     ) : async () {
+        // Skip reputation updates for inconclusive verdicts
+        if (finalVerdict == "Inconclusive") return;
+        
         for ((id, finding) in findings.vals()) {
             let correct = finding.verdict == finalVerdict;
-            let xpChange = if correct then 5 else -20;
+            let xpChange = if correct { 5 } else { -20 };
             
             // Update XP
             ignore await reputation.updateReputation(id, xpChange);
@@ -325,9 +329,12 @@ actor EscalationCanister {
         findings : [(Principal, Finding)],
         finalVerdict : Verdict
     ) : async () {
+        // Skip reputation updates for inconclusive verdicts
+        if (finalVerdict == "Inconclusive") return;
+        
         for ((id, finding) in findings.vals()) {
             let correct = finding.verdict == finalVerdict;
-            let xpChange = if correct then 15 else 0; // Only reward correct assessments
+            let xpChange = if correct { 15 } else { 0 }; // Only reward correct assessments
             
             ignore await reputation.updateReputation(id, xpChange);
         };
@@ -340,10 +347,8 @@ actor EscalationCanister {
         finalVerdict : Verdict
     ) : async () {
         for ((id, finding) in findings.vals()) {
-            let correct = finding.verdict == finalVerdict;
-            let xpChange = if correct then 25 else 10; // Base reward + bonus for correctness
-            
-            ignore await reputation.updateReputation(id, xpChange);
+            // Always award 25 XP for council participation
+            ignore await reputation.updateReputation(id, 25);
         };
     };
 
@@ -372,9 +377,10 @@ actor EscalationCanister {
         null
     };
 
-    // Find majority verdict (for council)
+    // Find majority verdict (absolute majority required)
     func findMajorityVerdict(findings : [(Principal, Finding)]) : ?Verdict {
         let counts = HashMap.HashMap<Verdict, Nat>(5, Text.equal, Text.hash);
+        let total = findings.size();
         for ((_, finding) in findings.vals()) {
             counts.put(finding.verdict, Option.get(counts.get(finding.verdict), 0) + 1);
         };
@@ -389,7 +395,12 @@ actor EscalationCanister {
             };
         };
         
-        maxVerdict
+        // Require absolute majority (> total/2)
+        if (maxCount > total / 2) {
+            maxVerdict
+        } else {
+            null
+        }
     };
 
     // Extract all verdicts

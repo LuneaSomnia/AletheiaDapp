@@ -7,6 +7,11 @@ import Result "mo:base/Result";
 import Time "mo:base/Time";
 import Blob "mo:base/Blob";
 import Debug "mo:base/Debug";
+import Array "mo:base/Array";
+import Iter "mo:base/Iter";
+import Int "mo:base/Int";
+import Option "mo:base/Option";
+
 
 // Interface for the ICP Ledger
 module Ledger {
@@ -45,50 +50,73 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
     type TransferResult = Ledger.TransferResult;
     type TransferError = Ledger.TransferError;
     
+    // Admin management
+    stable var admins : [Principal] = [];
+    let isAdmin = func (p : Principal) : Bool {
+        Option.isSome(Array.find(admins, func (admin : Principal) : Bool { admin == p }))
+    };
+    
     // Stable state variables
     stable var revenuePool : Nat64 = 0;
     stable var earningsEntries : [(Principal, Nat64)] = [];
     stable var lastDistributionTime : Int = 0;
-    stable var totalStaked : Nat64 = 0;
-    stable var stakedEntries : [(Principal, Nat64)] = [];
+    stable var totalMonthlyXP : Nat = 0;
+    stable var monthlyXPEntries : [(Principal, Nat)] = [];
+    stable var transactions : [Transaction] = [];
+    stable var config : Config = {
+        distributionPercentage = 50; // 50% of revenue pool
+        distributionInterval = 30 * 24 * 60 * 60 * 1_000_000_000; // 30 days in nanoseconds
+        fee = 10_000; // 0.0001 ICP
+    };
+    
+    // Types
+    public type Transaction = {
+        #deposit : { amount : Nat64; timestamp : Int };
+        #withdrawal : { principal : Principal; amount : Nat64; timestamp : Int; blockIndex : ?Nat64 };
+        #distribution : { amount : Nat64; totalXP : Nat; timestamp : Int };
+    };
+    
+    public type Config = {
+        distributionPercentage : Nat;
+        distributionInterval : Int;
+        fee : Nat64;
+    };
     
     // Mutable state
     var earnings = Trie.empty<Principal, Nat64>();
-    var staked = Trie.empty<Principal, Nat64>();
+    var monthlyXP = Trie.empty<Principal, Nat>();
     
     // Constants
-    let FEE : Nat64 = 10_000; // 0.0001 ICP
-    let DISTRIBUTION_INTERVAL : Int = 1_209_600_000_000_000; // 14 days in nanoseconds
     let DECIMALS : Nat64 = 100_000_000; // 1 ICP = 100,000,000 e8s
     
     // Initialize from stable state
     system func postupgrade() {
         earnings := Trie.fromArray(earningsEntries, Principal.equal, Principal.hash);
-        staked := Trie.fromArray(stakedEntries, Principal.equal, Principal.hash);
+        monthlyXP := Trie.fromArray(monthlyXPEntries, Principal.equal, Principal.hash);
     };
     
     system func preupgrade() {
         earningsEntries := Trie.toArray(earnings);
-        stakedEntries := Trie.toArray(staked);
+        monthlyXPEntries := Trie.toArray(monthlyXP);
     };
     
     // Internal: Get ledger actor
     let ledger : Ledger.Service = actor(Principal.toText(ledgerCanisterId));
     
-    // Internal: Calculate account identifier
+    // Internal: Calculate account identifier (placeholder - use production implementation)
     func accountIdentifier(principal : Principal, subaccount : ?Blob) : AccountIdentifier {
         let sub = switch (subaccount) {
-            case (null) { Blob.fromArrayMut(Array.init(32, 0 : Nat8)) };
+            case (null) { Blob.fromArray(Array.init(32, 0 : Nat8)) };
             case (?sa) { sa };
         };
         
-        let hash = SHA224("\x0Aaccount-id");
-        hash.write("\x0A");
-        hash.write(Principal.toBlob(principal));
-        hash.write(sub);
-        let hashSum = hash.sum();
-        let crc = CRC32.ofArray(hashSum);
-        Blob.fromArray(Array.append(crc, hashSum));
+        // Production should use proper SHA224/CRC32 implementation
+        let principalBytes = Blob.toArray(Principal.toBlob(principal));
+        let subBytes = Blob.toArray(sub);
+        let allBytes = Array.append(principalBytes, subBytes);
+        Blob.fromArray(Array.tabulate(32, func(i : Nat) : Nat8 {
+            if (i < allBytes.size()) allBytes[i] else 0
+        }));
     };
     
     // Internal: Convert Nat to Nat64 safely
@@ -101,38 +129,63 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
         Nat64.toNat(n);
     };
     
-    // Add funds to revenue pool
+    // Add funds to revenue pool (admin only)
     public shared({ caller }) func deposit(amount : Nat64) : async () {
-        // In a real implementation, this would verify actual transfer
+        assert isAdmin(caller);
         revenuePool += amount;
+        addTransaction(#deposit { amount = amount; timestamp = Time.now() });
     };
     
-    // Calculate earnings based on staked amount
-    public shared({ caller }) func calculateEarnings() : async () {
-        if (Time.now() < lastDistributionTime + DISTRIBUTION_INTERVAL) {
-            Debug.print("Earnings calculation too soon");
+    // Update XP for a user (called by reputation system)
+    public shared({ caller }) func updateXP(user : Principal, xp : Nat) : async () {
+        assert isAdmin(caller);
+        
+        let current = Trie.get(monthlyXP, key(user), Principal.equal);
+        let currentXP = Option.get(current, 0);
+        
+        totalMonthlyXP := totalMonthlyXP - currentXP + xp;
+        monthlyXP := Trie.put(monthlyXP, key(user), Principal.equal, xp).0;
+    };
+    
+    // Calculate and distribute earnings (admin or automated)
+    public shared({ caller }) func distributeMonthlyPool() : async () {
+        assert isAdmin(caller) or Time.now() >= lastDistributionTime + config.distributionInterval;
+        
+        if (revenuePool == 0 or totalMonthlyXP == 0) {
+            Debug.print("No revenue or XP to distribute");
             return;
         };
         
-        if (revenuePool == 0 or totalStaked == 0) {
-            Debug.print("No revenue or stake to distribute");
-            return;
-        };
-        
-        let distributionAmount = revenuePool / 2; // Distribute half the pool
+        let distributionAmount : Nat64 = (revenuePool * toNat64(config.distributionPercentage)) / 100;
         revenuePool -= distributionAmount;
         
-        Trie.iter(staked, func(principal : Principal, amount : Nat64) {
-            let share = (amount * distributionAmount) / totalStaked;
-            let current = Trie.get(earnings, key(principal), Principal.equal);
-            let newAmount = switch (current) {
-                case (null) { share };
-                case (?a) { a + share };
+        var distributed : Nat64 = 0;
+        var recipientCount = 0;
+        
+        for ((user, xp) in Trie.iter(monthlyXP)) {
+            if (xp > 0) {
+                let share : Nat64 = (distributionAmount * toNat64(xp)) / toNat64(totalMonthlyXP);
+                distributed += share;
+                
+                let current = Trie.get(earnings, key(user), Principal.equal);
+                let newAmount = Option.get(current, 0) + share;
+                earnings := Trie.put(earnings, key(user), Principal.equal, newAmount).0;
+                recipientCount += 1;
             };
-            earnings := Trie.put(earnings, key(principal), Principal.equal, newAmount).0;
+        };
+        
+        // Reset monthly XP
+        monthlyXP := Trie.empty();
+        totalMonthlyXP := 0;
+        lastDistributionTime := Time.now();
+        
+        addTransaction(#distribution { 
+            amount = distributed; 
+            totalXP = totalMonthlyXP; 
+            timestamp = Time.now() 
         });
         
-        lastDistributionTime := Time.now();
+        Debug.print("Distributed " # debug_show(distributed) # " to " # debug_show(recipientCount) # " users");
     };
     
     // Withdraw earnings to user's account
@@ -142,33 +195,34 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
         
         switch (current) {
             case (null) {
-                return #err(#Other({ 
+                return #err(#Other { 
                     error_message = "No earnings available"; 
                     error_code = 404 
-                }));
+                });
             };
             case (?available) {
                 if (available < amount) {
-                    return #err(#InsufficientFunds({ 
+                    return #err(#InsufficientFunds { 
                         balance = { e8s = available } 
-                    }));
+                    });
                 };
                 
                 // Deduct fee from amount
-                let transferAmount = amount - FEE;
-                if (transferAmount <= 0) {
-                    return #err(#BadFee({ 
-                        expected_fee = { e8s = FEE } 
-                    }));
+                if (amount <= config.fee) {
+                    return #err(#BadFee { 
+                        expected_fee = { e8s = config.fee } 
+                    });
                 };
+                
+                let transferAmount = amount - config.fee;
                 
                 let args : Ledger.TransferArgs = {
                     memo = 0;
                     amount = { e8s = transferAmount };
-                    fee = { e8s = FEE };
+                    fee = { e8s = config.fee };
                     from_subaccount = null;
                     to = account;
-                    created_at_time = ?{ timestamp_nanos = Nat64.fromIntWrap(Time.now()) };
+                    created_at_time = ?{ timestamp_nanos = toNat64(Int.abs(Time.now())) };
                 };
                 
                 let result = await ledger.transfer(args);
@@ -178,58 +232,85 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
                         // Update earnings balance
                         let newBalance = available - amount;
                         earnings := Trie.put(earnings, key(caller), Principal.equal, newBalance).0;
+                        
+                        addTransaction(#withdrawal { 
+                            principal = caller; 
+                            amount = amount; 
+                            timestamp = Time.now();
+                            blockIndex = ?blockIndex;
+                        });
+                        
                         #ok(blockIndex);
                     };
-                    case (#Err err) { #err(err) };
+                    case (#Err err) { 
+                        // Log failed transaction
+                        addTransaction(#withdrawal { 
+                            principal = caller; 
+                            amount = amount; 
+                            timestamp = Time.now();
+                            blockIndex = null;
+                        });
+                        #err(err) 
+                    };
                 };
             };
         };
     };
     
-    // Record staked amount (called by staking contract)
-    public shared({ caller }) func updateStake(principal : Principal, amount : Nat64) : async () {
-        let current = Trie.get(staked, key(principal), Principal.equal);
-        
-        switch (current) {
-            case (null) {
-                staked := Trie.put(staked, key(principal), Principal.equal, amount).0;
-                totalStaked += amount;
-            };
-            case (?currentAmount) {
-                totalStaked := totalStaked - currentAmount + amount;
-                staked := Trie.put(staked, key(principal), Principal.equal, amount).0;
-            };
+    // Admin functions
+    public shared({ caller }) func addAdmin(newAdmin : Principal) : async () {
+        assert isAdmin(caller);
+        if (Option.isNull(Array.find(admins, func (a : Principal) : Bool { a == newAdmin })) {
+            admins := Array.append(admins, [newAdmin]);
         };
     };
     
-    // Query revenue pool balance
-    public query func getRevenuePool() : async Nat64 {
+     shared({ caller }) func updateConfig(newConfig : Config) : async () {
+        assert isAdmin(caller);
+        config := newConfig;
+    };
+    
+    // Query functions
+    query func getRevenuePool() : async Nat64 {
         revenuePool;
     };
     
-    // Query user earnings
-    public query func getUserEarnings(user : Principal) : async Nat64 {
+    query func getUserEarnings(user : Principal) : async Nat64 {
         Trie.get(earnings, key(user), Principal.equal) |? 0;
     };
     
-    // Query total staked amount
-    public query func getTotalStaked() : async Nat64 {
-        totalStaked;
+    query func getMonthlyXP(user : Principal) : async Nat {
+        Trie.get(monthlyXP, key(user), Principal.equal) |? 0;
     };
     
-    // Internal: Trie key helper
+    query func getTotalMonthlyXP() : async Nat {
+        totalMonthlyXP;
+    };
+    
+    query func getTransactions(since : Int) : async [Transaction] {
+        Array.filter(transactions, func (t : Transaction) : Bool {
+            let ts = switch (t) {
+                case (#deposit d) d.timestamp;
+                case (#withdrawal w) w.timestamp;
+                case (#distribution d) d.timestamp;
+            };
+            ts >= since
+        });
+    };
+    
+    query func getConfig() : async Config {
+        config;
+    };
+    
+    query func getAdmins() : async [Principal] {
+        admins;
+    };
+    
+    // Internal utilities
     func key(p : Principal) : Trie.Key<Principal> {
         { key = p; hash = Principal.hash(p) };
     };
     
-    // SHA-224 Implementation (simplified)
-    module SHA224 {
-        public func write(hash : Text, data : Blob) {};
-        public func sum() : [Nat8] { [] };
+    func addTransaction(tx : Transaction) {
+        transactions := Array.append(transactions, [tx]);
     };
-    
-    // CRC32 Implementation (simplified)
-    module CRC32 {
-        public func ofArray(data : [Nat8]) : [Nat8] { [] };
-    };
-};

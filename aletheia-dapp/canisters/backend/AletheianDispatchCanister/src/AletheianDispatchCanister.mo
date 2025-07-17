@@ -2,7 +2,7 @@ import Array "mo:base/Array";
 import Buffer "mo:base/Buffer";
 import HashMap "mo:base/HashMap";
 import Iter "mo:base/Iter";
-import List "mo:base/List";
+import _ "mo:base/List";
 import Nat "mo:base/Nat";
 import Principal "mo:base/Principal";
 import Result "mo:base/Result";
@@ -50,12 +50,22 @@ actor AletheianDispatchCanister {
         assignmentsEntries := Iter.toArray(assignments.entries());
     };
 
-    system func postupgrade() {
-        var profiles = HashMap.fromIter<Principal, AletheianProfile>(profilesEntries.vals(), 0, Principal.equal, Principal.hash);
-        var assignments = HashMap.fromIter<Text, [Principal]>(assignmentsEntries.vals(), 0, Text.equal, Text.hash);
-        profilesEntries := [];
-        assignmentsEntries := [];
+   system func postupgrade() {
+    for (id in profiles.keys()) {
+        profiles.delete(id);
     };
+    for ((id, profile) in profilesEntries.vals()) {
+        profiles.put(id, profile);
+    };
+    for (claimId in assignments.keys()) {
+        assignments.delete(claimId);
+    };
+    for ((claimId, aletheians) in assignmentsEntries.vals()) {
+        assignments.put(claimId, aletheians);
+    };
+    profilesEntries := [];
+    assignmentsEntries := [];
+};
 
     // Main dispatch function
     public shared func assignClaim(claim : Claim) : async AssignmentResult {
@@ -143,34 +153,31 @@ actor AletheianDispatchCanister {
         claim : Claim
     ) : Buffer.Buffer<Principal> {
         let selected = Buffer.Buffer<Principal>(3);
-        var index = 0;
-        
-        
-// Try to get local expert first if available
-switch (claim.locationHint) {
-    case (?location) {
-        while (index < scored.size() and selected.size() < 3) {
-            let (profile, _) = scored.get(index);
-            switch (profile.location) {
-                case (?loc) if (loc == location) {
-                    selected.add(profile.id);
-                    scored.removeIndex(index);
+
+        // Step 1: If claim has location hint, pick best available local expert
+        if (claim.locationHint != null) {
+            for (i in Iter.range(0, scored.size() - 1)) {
+                let (profile, _) = scored.get(i);
+                switch (profile.location, claim.locationHint) {
+                    case (?loc, ?hint) if (loc == hint) {
+                        if (not Buffer.contains<Principal>(selected, profile.id, Principal.equal)) {
+                            selected.add(profile.id);
+                            if (selected.size() == 3) return selected;
+                        };
+                    };
+                    case _ {};
                 };
-                case _ { index += 1 };
             };
         };
-    };
-    case null { index := 0 };
-};
 
-// Fill remaining spots with best matches
-index := 0;
-        while (index < scored.size() and selected.size() < 3) {
-            let (profile, _) = scored.get(index);
+        // Step 2: Fill remaining spots with best overall matches
+        var i = 0;
+        while (i < scored.size() and selected.size() < 3) {
+            let (profile, _) = scored.get(i);
             if (not Buffer.contains<Principal>(selected, profile.id, Principal.equal)) {
                 selected.add(profile.id);
             };
-            index += 1;
+            i += 1;
         };
         
         selected

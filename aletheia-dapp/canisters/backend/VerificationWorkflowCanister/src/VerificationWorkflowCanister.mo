@@ -30,6 +30,7 @@ actor VerificationWorkflowCanister {
             #disputed;
             #completed;
         };
+        duplicateOf : ?ClaimId; // Track original claim ID for duplicates
         createdAt : Int;
     };
     
@@ -44,10 +45,12 @@ actor VerificationWorkflowCanister {
     let factLedger : actor {
         findSimilarClaims : (content : Text) -> async [ClaimId];
         getClaim : (ClaimId) -> async ?{ content : Text };
+        getVerifiedFact : (ClaimId) -> async ?{ verdict : Text; explanation : Text; evidence : [Text] };
         storeResult : (claimId : ClaimId, verdict : Text, explanation : Text, evidence : [Text]) -> async Bool;
     } = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai"); // Replace with actual FactLedger canister ID
 
     let aletheianProfile : actor {
+        getAletheianRank : (AletheianId) -> async Text;
         getAletheianExpertise : (AletheianId) -> async [Text];
         updateReputation : (AletheianId, Int) -> async Bool;
     } = actor ("rrkah-fqaaa-aaaaa-aaaaq-cai"); // Replace with actual AletheianProfile canister ID
@@ -55,6 +58,11 @@ actor VerificationWorkflowCanister {
     let escalation : actor {
         escalateClaim : (claimId : ClaimId, reason : Text) -> async Bool;
     } = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai"); // Replace with actual Escalation canister ID
+
+    let aiIntegration : actor {
+        generateQuestions : (claim : Text) -> async [Text];
+        researchClaim : (claim : Text) -> async [Text];
+    } = actor ("r7inp-6aaaa-aaaaa-aaabq-cai"); // Replace with actual AI canister ID
 
     // ======== INITIALIZATION ========
     system func preupgrade() {
@@ -80,6 +88,7 @@ actor VerificationWorkflowCanister {
             assignedAletheians = aletheians;
             findings = [];
             status = #assigned;
+            duplicateOf = null;
             createdAt = Time.now();
         };
 
@@ -128,6 +137,7 @@ actor VerificationWorkflowCanister {
                     task with
                     findings = updatedFindings;
                     status = newStatus;
+                    duplicateOf = if (isDuplicate) { originalClaimId } else { null };
                 };
 
                 tasks.put(claimId, updatedTask);
@@ -150,15 +160,15 @@ actor VerificationWorkflowCanister {
             case (?task) {
                 // Check for duplicate claims first
                 switch (await detectDuplicate(claimId, task)) {
-                    case (#ok verdict) {
+                    case (#ok(originalId, verdict, explanation, evidence)) {
                         // Duplicate detected and handled
-                        let _ = await finalizeTask(claimId, verdict, "Duplicate claim detected", []);
+                        let _ = await finalizeTask(claimId, verdict, explanation, evidence, true);
                     };
                     case (#err _) {
                         // Not a duplicate, proceed with consensus
                         switch (calculateConsensus(task.findings)) {
                             case (#ok(verdict, explanation, evidence)) {
-                                let _ = await finalizeTask(claimId, verdict, explanation, evidence);
+                                let _ = await finalizeTask(claimId, verdict, explanation, evidence, false);
                             };
                             case (#err(reason)) {
                                 // Consensus not reached, escalate
@@ -176,7 +186,7 @@ actor VerificationWorkflowCanister {
     };
 
     // Detect duplicate claims using AI and blockchain
-    func detectDuplicate(claimId : ClaimId, task : VerificationTask) : async Result.Result<Text, Text> {
+    func detectDuplicate(claimId : ClaimId, task : VerificationTask) : async Result.Result<(ClaimId, Text, Text, [Text]), Text> {
         // Get claim content
         let claimContent = switch (await factLedger.getClaim(claimId)) {
             case null { return #err("Claim content not found") };
@@ -188,17 +198,28 @@ actor VerificationWorkflowCanister {
         if (similarClaims.size() > 0) {
             // Check if any Aletheian flagged as duplicate
             var duplicateFlagged = false;
-            var duplicateVerdict : Text = "";
+            var originalId : ClaimId = "";
             
             for ((aletheian, finding) in task.findings.vals()) {
-                if (finding.verdict == "Duplicate" and Option.isSome(finding.evidence.get(0))) {
+                if (finding.verdict == "Duplicate" and finding.evidence.size() > 0) {
                     duplicateFlagged := true;
-                    duplicateVerdict := "Duplicate";
+                    originalId := finding.evidence[0];
                 };
             };
 
             if (duplicateFlagged) {
-                #ok(duplicateVerdict)
+                // Get existing verified fact
+                switch (await factLedger.getVerifiedFact(originalId)) {
+                    case null { #err("Original claim not verified") };
+                    case (?originalFact) {
+                        #ok((
+                            originalId, 
+                            originalFact.verdict, 
+                            originalFact.explanation, 
+                            originalFact.evidence
+                        ))
+                    };
+                }
             } else {
                 #err("Similar claims found but not flagged as duplicate")
             };
@@ -214,8 +235,8 @@ actor VerificationWorkflowCanister {
         };
 
         let verdictCounts = HashMap.HashMap<Text, Nat>(3, Text.equal, Text.hash);
-        var evidenceBuffer = Buffer.Buffer<Text>(0);
-        var explanations = Buffer.Buffer<Text>(0);
+        let evidenceBuffer = Buffer.Buffer<Text>(0);
+        let explanations = Buffer.Buffer<Text>(0);
 
         // Count verdicts and collect evidence
         for ((_, finding) in findings.vals()) {
@@ -246,7 +267,11 @@ actor VerificationWorkflowCanister {
             case (?verdict) {
                 // Combine explanations
                 let combinedExplanation = Text.join("\n\n", Buffer.toArray(explanations));
-                #ok(verdict, combinedExplanation, Buffer.toArray(evidenceBuffer))
+                #ok((
+                    verdict, 
+                    combinedExplanation, 
+                    Buffer.toArray(evidenceBuffer)
+                ))
             };
         };
     };
@@ -256,29 +281,33 @@ actor VerificationWorkflowCanister {
         claimId : ClaimId,
         verdict : Text,
         explanation : Text,
-        evidence : [Text]
+        evidence : [Text],
+        isDuplicate : Bool
     ) : async Bool {
         switch (tasks.get(claimId)) {
             case null { false };
             case (?task) {
-                // Store result in blockchain
-                let stored = await factLedger.storeResult(claimId, verdict, explanation, evidence);
-                if (stored) {
-                    // Update Aletheian reputations
-                    for (aletheian in task.assignedAletheians.vals()) {
-                        ignore await aletheianProfile.updateReputation(aletheian, 10); // Base XP
+                // Only store new facts for non-duplicates
+                if (not isDuplicate) {
+                    let stored = await factLedger.storeResult(claimId, verdict, explanation, evidence);
+                    if (not stored) {
+                        return false;
                     };
-                    
-                    // Update task status
-                    let updatedTask = { 
-                        task with 
-                        status = #consensusReached(verdict) 
-                    };
-                    tasks.put(claimId, updatedTask);
-                    true
-                } else {
-                    false
-                }
+                };
+                
+                // Update Aletheian reputations
+                for (aletheian in task.assignedAletheians.vals()) {
+                    ignore await aletheianProfile.updateReputation(aletheian, 10); // Base XP
+                };
+                
+                // Update task status
+                let updatedTask = { 
+                    task with 
+                    status = #consensusReached(verdict);
+                    duplicateOf = if (isDuplicate) { task.duplicateOf } else { null };
+                };
+                tasks.put(claimId, updatedTask);
+                true
             }
         }
     };
