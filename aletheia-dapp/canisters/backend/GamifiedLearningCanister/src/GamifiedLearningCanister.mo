@@ -8,6 +8,7 @@ import Result "mo:base/Result";
 import Text "mo:base/Text";
 import Time "mo:base/Time";
 import Float "mo:base/Float";
+import Debug "mo:base/Debug";
 
 actor class GamifiedLearningCanister() {
     type UserId = Principal;
@@ -27,6 +28,7 @@ actor class GamifiedLearningCanister() {
         options : [Text];
         correctOption : Text;
         explanation : Text;
+        aiFeedback : Text; // Added AI-generated feedback
     };
 
     public type Lesson = {
@@ -35,6 +37,7 @@ actor class GamifiedLearningCanister() {
         content : Text;
         questions : [Question];
         rewardPoints : RewardPoints;
+        difficulty : Text; // Added difficulty level
     };
 
     public type Module = {
@@ -42,6 +45,7 @@ actor class GamifiedLearningCanister() {
         title : Text;
         description : Text;
         lessons : [Lesson];
+        category : Text; // Added category for filtering
     };
 
     public type LessonProgress = {
@@ -49,6 +53,7 @@ actor class GamifiedLearningCanister() {
         completed : Bool;
         score : Float;
         lastAttempted : Int;
+        attempts : Nat; // Track number of attempts
     };
 
     public type UserProgress = {
@@ -56,6 +61,9 @@ actor class GamifiedLearningCanister() {
         completedModules : [ModuleId];
         lessonProgress : [LessonProgress];
         totalRewardPoints : RewardPoints;
+        streak : Nat; // Daily streak counter
+        lastActive : Int; // Last active timestamp
+        achievements : [Text]; // Earned achievements
     };
 
     public type QuizResult = {
@@ -63,6 +71,8 @@ actor class GamifiedLearningCanister() {
         correctAnswers : Nat;
         totalQuestions : Nat;
         rewardPointsEarned : RewardPoints;
+        feedback : [Text]; // AI-powered feedback
+        nextRecommended : ?Lesson; // Recommended next lesson
     };
 
     // State
@@ -75,19 +85,35 @@ actor class GamifiedLearningCanister() {
         Principal.hash
     );
 
-    // Initialize with sample modules
+    // AI feedback templates
+    let aiFeedbackTemplates = [
+        "Great job! You're mastering this concept.",
+        "Nice work! Consider reviewing the explanation to reinforce your understanding.",
+        "Good effort! Focus on the key concepts for improvement.",
+        "You're making progress! Try practicing similar questions to strengthen your skills."
+    ];
+
+    // Achievement names
+    let achievementNames = [
+        "First Steps", "Quick Learner", "Perfect Score", "Critical Thinker",
+        "Misinformation Buster", "Source Detective", "Daily Learner"
+    ];
+
+    // Initialize with comprehensive modules
     public func seedModules() : async () {
         modules := [
             {
                 id = "digital-literacy-101";
                 title = "Digital Literacy Fundamentals";
                 description = "Learn essential digital skills for the modern world";
+                category = "Foundations";
                 lessons = [
                     {
                         id = "internet-basics";
                         title = "Internet Fundamentals";
                         content = "Understanding how the internet works, browsers, and websites...";
                         rewardPoints = 50;
+                        difficulty = "Beginner";
                         questions = [
                             {
                                 id = "q1";
@@ -100,6 +126,7 @@ actor class GamifiedLearningCanister() {
                                 ];
                                 correctOption = "Uniform Resource Locator";
                                 explanation = "A URL (Uniform Resource Locator) is the address of a resource on the internet.";
+                                aiFeedback = "Understanding URLs helps you navigate and evaluate online resources effectively.";
                             },
                             {
                                 id = "q2";
@@ -107,6 +134,7 @@ actor class GamifiedLearningCanister() {
                                 options = ["HTTP", "FTP", "HTTPS", "SMTP"];
                                 correctOption = "HTTPS";
                                 explanation = "HTTPS (HyperText Transfer Protocol Secure) encrypts data between your browser and websites.";
+                                aiFeedback = "Recognizing secure protocols is crucial for protecting your personal information online.";
                             }
                         ];
                     },
@@ -115,6 +143,7 @@ actor class GamifiedLearningCanister() {
                         title = "Online Safety Practices";
                         content = "Protecting yourself and your data online...";
                         rewardPoints = 75;
+                        difficulty = "Intermediate";
                         questions = [
                             {
                                 id = "q1";
@@ -127,22 +156,178 @@ actor class GamifiedLearningCanister() {
                                 ];
                                 correctOption = "Long phrases with mixed characters";
                                 explanation = "Long passphrases with upper/lower case letters, numbers and symbols are most secure.";
+                                aiFeedback = "Strong passwords are your first line of defense against unauthorized access.";
+                            },
+                            {
+                                id = "q2";
+                                questionText = "What should you do if you receive a suspicious email?";
+                                options = [
+                                    "Click links to verify",
+                                    "Reply with personal information",
+                                    "Delete without opening",
+                                    "Forward to friends"
+                                ];
+                                correctOption = "Delete without opening";
+                                explanation = "Suspicious emails may contain phishing attempts or malware.";
+                                aiFeedback = "Critical evaluation of communications helps prevent security breaches.";
                             }
                         ];
                     }
                 ];
             },
             {
-                id = "web3-fundamentals";
-                title = "Web3 Essentials";
-                description = "Understanding blockchain, crypto, and decentralized systems";
+                id = "critical-thinking";
+                title = "Critical Thinking Skills";
+                description = "Develop your ability to analyze information and ask the right questions";
+                category = "Core Skills";
                 lessons = [
                     {
-                        id = "blockchain-basics";
-                        title = "Blockchain Technology";
-                        content = "How blockchains work and their key features...";
+                        id = "question-mirror";
+                        title = "Asking the Right Questions";
+                        content = "Learn how to formulate questions that uncover the truth...";
                         rewardPoints = 100;
-                        questions = [];
+                        difficulty = "Intermediate";
+                        questions = [
+                            {
+                                id = "q1";
+                                questionText = "What is the primary purpose of the 'Question Mirror' in Aletheia?";
+                                options = [
+                                    "To reflect the user's image",
+                                    "To generate questions that help critically analyze a claim",
+                                    "To provide answers to claims",
+                                    "To mirror the claim to other users"
+                                ];
+                                correctOption = "To generate questions that help critically analyze a claim";
+                                explanation = "The Question Mirror uses AI to generate insightful questions that help users critically evaluate claims.";
+                                aiFeedback = "Asking the right questions is foundational to critical thinking and truth discovery.";
+                            },
+                            {
+                                id = "q2";
+                                questionText = "Which question would be MOST helpful when evaluating a health claim?";
+                                options = [
+                                    "How many people have shared this?",
+                                    "What do my friends think about this?",
+                                    "What scientific evidence supports this from reputable organizations?",
+                                    "Does this align with my beliefs?"
+                                ];
+                                correctOption = "What scientific evidence supports this from reputable organizations?";
+                                explanation = "Scientific evidence from reputable sources is crucial for evaluating health claims.";
+                                aiFeedback = "Focusing on evidence helps separate facts from opinions.";
+                            }
+                        ];
+                    },
+                    {
+                        id = "source-evaluation";
+                        title = "Evaluating Sources with CRAAP";
+                        content = "Learn the CRAAP model for source evaluation: Currency, Relevance, Authority, Accuracy, Purpose";
+                        rewardPoints = 125;
+                        difficulty = "Advanced";
+                        questions = [
+                            {
+                                id = "q1";
+                                questionText = "What does the 'A' in CRAAP stand for?";
+                                options = [
+                                    "Availability",
+                                    "Authority",
+                                    "Accuracy",
+                                    "Appearance"
+                                ];
+                                correctOption = "Accuracy";
+                                explanation = "Accuracy refers to the reliability and correctness of the information.";
+                                aiFeedback = "Evaluating accuracy helps identify trustworthy information sources.";
+                            },
+                            {
+                                id = "q2";
+                                questionText = "Which factor is MOST important when evaluating a source's purpose?";
+                                options = [
+                                    "The design of the website",
+                                    "The author's educational background",
+                                    "The domain extension (.com, .org, etc.)",
+                                    "Whether the intent is to inform, persuade, or sell"
+                                ];
+                                correctOption = "Whether the intent is to inform, persuade, or sell";
+                                explanation = "Understanding purpose helps identify potential biases.";
+                                aiFeedback = "Recognizing purpose enables you to interpret information in proper context.";
+                            }
+                        ];
+                    }
+                ];
+            },
+            {
+                id = "misinformation-detection";
+                title = "Identifying Misinformation";
+                description = "Learn to spot and debunk common misinformation tactics";
+                category = "Advanced Skills";
+                lessons = [
+                    {
+                        id = "red-flags";
+                        title = "Recognizing Misinformation Red Flags";
+                        content = "Identify common signs of misinformation: emotional language, lack of sources, urgency...";
+                        rewardPoints = 100;
+                        difficulty = "Intermediate";
+                        questions = [
+                            {
+                                id = "q1";
+                                questionText = "Which is a common red flag for misinformation?";
+                                options = [
+                                    "Citations to scientific studies",
+                                    "Neutral, factual language",
+                                    "Emotional language and urgency",
+                                    "Author credentials provided"
+                                ];
+                                correctOption = "Emotional language and urgency";
+                                explanation = "Emotional appeals often distract from lack of evidence.";
+                                aiFeedback = "Recognizing emotional manipulation helps identify potential misinformation.";
+                            },
+                            {
+                                id = "q2";
+                                questionText = "What should you suspect when a claim lacks verifiable sources?";
+                                options = [
+                                    "It's probably cutting-edge research",
+                                    "It's likely to be accurate",
+                                    "It may be misinformation",
+                                    "The author is protecting sources"
+                                ];
+                                correctOption = "It may be misinformation";
+                                explanation = "Verifiable sources are essential for credible claims.";
+                                aiFeedback = "Source verification is crucial for information validation.";
+                            }
+                        ];
+                    },
+                    {
+                        id = "deepfake-awareness";
+                        title = "Deepfake Detection";
+                        content = "Learn to identify AI-generated manipulated media";
+                        rewardPoints = 150;
+                        difficulty = "Advanced";
+                        questions = [
+                            {
+                                id = "q1";
+                                questionText = "Which technique helps detect deepfake videos?";
+                                options = [
+                                    "Checking for perfect lip-syncing",
+                                    "Looking for unnatural blinking patterns",
+                                    "Verifying the number of views",
+                                    "Reading the comments section"
+                                ];
+                                correctOption = "Looking for unnatural blinking patterns";
+                                explanation = "AI often struggles to replicate natural human blinking patterns.";
+                                aiFeedback = "Attention to physiological details helps detect synthetic media.";
+                            },
+                            {
+                                id = "q2";
+                                questionText = "What's the MOST reliable way to verify a suspicious image?";
+                                options = [
+                                    "Asking friends on social media",
+                                    "Using reverse image search tools",
+                                    "Checking how many likes it has",
+                                    "Looking at the image file size"
+                                ];
+                                correctOption = "Using reverse image search tools";
+                                explanation = "Reverse image search can find original sources and context.";
+                                aiFeedback = "Technical verification tools provide objective evidence for media analysis.";
+                            }
+                        ];
                     }
                 ];
             }
@@ -159,6 +344,7 @@ actor class GamifiedLearningCanister() {
                     id = m.id;
                     title = m.title;
                     description = m.description;
+                    category = m.category;
                     lessons = Array.map<Lesson, Lesson>(
                         m.lessons,
                         func(lesson) {
@@ -167,6 +353,7 @@ actor class GamifiedLearningCanister() {
                                 title = lesson.title;
                                 content = lesson.content;
                                 rewardPoints = lesson.rewardPoints;
+                                difficulty = lesson.difficulty;
                                 questions = [];
                             };
                         }
@@ -186,6 +373,7 @@ actor class GamifiedLearningCanister() {
                     title = lesson.title;
                     content = lesson.content;
                     rewardPoints = lesson.rewardPoints;
+                    difficulty = lesson.difficulty;
                     questions = Array.map<Question, Question>(
                         lesson.questions,
                         func(q) {
@@ -195,6 +383,7 @@ actor class GamifiedLearningCanister() {
                                 options = q.options;
                                 correctOption = "";
                                 explanation = "";
+                                aiFeedback = "";
                             };
                         }
                     );
@@ -216,6 +405,7 @@ actor class GamifiedLearningCanister() {
                 // Calculate score
                 let totalQuestions = lesson.questions.size();
                 var correctAnswers = 0;
+                let feedbackBuffer = Buffer.Buffer<Text>(0);
 
                 for (answer in answers.vals()) {
                     switch (Array.find(lesson.questions, func(q : Question) : Bool { q.id == answer.questionId })) {
@@ -223,6 +413,11 @@ actor class GamifiedLearningCanister() {
                         case (?question) {
                             if (question.correctOption == answer.selectedOption) {
                                 correctAnswers += 1;
+                                // Add AI feedback for correct answers
+                                feedbackBuffer.add("✅ Correct! " # question.aiFeedback);
+                            } else {
+                                // More detailed feedback for incorrect answers
+                                feedbackBuffer.add("❌ Incorrect. " # question.explanation # " " # question.aiFeedback);
                             };
                         };
                     };
@@ -238,11 +433,16 @@ actor class GamifiedLearningCanister() {
                 let rewardPoints = if (score >= 80.0) { lesson.rewardPoints } else { 0 };
                 updateUserProgress(userId, moduleId, lessonId, score, rewardPoints);
 
+                // Recommend next lesson
+                let nextLesson = recommendNextLesson(userId, moduleId, lessonId);
+
                 #ok({
                     score = score;
                     correctAnswers = correctAnswers;
                     totalQuestions = totalQuestions;
                     rewardPointsEarned = rewardPoints;
+                    feedback = feedbackBuffer.toArray();
+                    nextRecommended = nextLesson;
                 });
             };
         };
@@ -254,27 +454,48 @@ actor class GamifiedLearningCanister() {
             case (null) {
                 createDefaultProgress(userId);
             };
-            case (?progress) { progress };
+            case (?progress) { 
+                // Update streak if needed
+                updateStreak(userId, progress);
+            };
+        };
+    };
+
+    public shared (msg) func claimDailyReward() : async RewardPoints {
+        let userId = msg.caller;
+        let now = Time.now();
+        let reward = 25; // Daily reward points
+        
+        switch (userProgress.get(userId)) {
+            case (null) {
+                let newProgress = createDefaultProgress(userId);
+                userProgress.put(userId, newProgress);
+                reward;
+            };
+            case (?progress) {
+                let updatedProgress = updateStreak(userId, progress);
+                updatedProgress.totalRewardPoints + reward;
+            };
         };
     };
 
     // Internal helper functions
     func findLesson(moduleId : ModuleId, lessonId : LessonId) : ?Lesson {
-    let m = Array.find(
-        modules,
-        func(m : Module) : Bool { m.id == moduleId }
-    );
+        let m = Array.find(
+            modules,
+            func(m : Module) : Bool { m.id == moduleId }
+        );
 
-    switch (m) {
-        case (null) { null };
-        case (?m) {
-            Array.find(
-                m.lessons,
-                func(lesson : Lesson) : Bool { lesson.id == lessonId }
-            );
+        switch (m) {
+            case (null) { null };
+            case (?m) {
+                Array.find(
+                    m.lessons,
+                    func(lesson : Lesson) : Bool { lesson.id == lessonId }
+                );
+            };
         };
     };
-};
 
     func updateUserProgress(
         userId : UserId,
@@ -292,39 +513,42 @@ actor class GamifiedLearningCanister() {
         let now = Time.now();
 
         // Update lesson progress
-        var newProgress = Buffer.fromArray<LessonProgress>(currentProgress.lessonProgress);
-        switch (Array.find(newProgress.toArray(), func(lp : LessonProgress) : Bool { lp.lessonId == lessonId })) {
-            case (null) {
-                newProgress.add({
+        var newProgressBuffer = Buffer.fromArray<LessonProgress>(currentProgress.lessonProgress);
+        var found = false;
+        
+        // Update existing progress if found
+        for (i in Iter.range(0, newProgressBuffer.size() - 1)) {
+            let lp = newProgressBuffer.get(i);
+            if (lp.lessonId == lessonId) {
+                found := true;
+                let updatedLp : LessonProgress = {
                     lessonId = lessonId;
-                    completed = isCompleted;
-                    score = score;
+                    completed = lp.completed or isCompleted;
+                    score = Float.max(lp.score, score);
                     lastAttempted = now;
-                });
+                    attempts = lp.attempts + 1;
+                };
+                newProgressBuffer.put(i, updatedLp);
             };
-            case (?lp) {
-                newProgress := Buffer.map<UserProgress.LessonProgress, LessonProgress>(
-                    newProgress,
-                    func(lp) {
-                        if (lp.lessonId == lessonId) {
-                            {
-                                lessonId = lessonId;
-                                completed = lp.completed or isCompleted;
-                                score = Float.max(lp.score, score);
-                                lastAttempted = now;
-                            };
-                        } else {
-                            lp;
-                        };
-                    }
-                );
-            };
+        };
+        
+        // Add new entry if not found
+        if (not found) {
+            newProgressBuffer.add({
+                lessonId = lessonId;
+                completed = isCompleted;
+                score = score;
+                lastAttempted = now;
+                attempts = 1;
+            });
         };
 
         // Update completed modules
-        let completedModules = if (isModuleComplete(moduleId, newProgress.toArray())) {
+        let completedModules = if (isModuleComplete(moduleId, newProgressBuffer.toArray())) {
             if (Array.find(currentProgress.completedModules, func(mid : ModuleId) : Bool { mid == moduleId }) == null) {
-                Buffer.fromArray<ModuleId>(currentProgress.completedModules).add(moduleId).toArray();
+                let buffer = Buffer.fromArray<ModuleId>(currentProgress.completedModules);
+                buffer.add(moduleId);
+                buffer.toArray();
             } else {
                 currentProgress.completedModules;
             };
@@ -335,32 +559,41 @@ actor class GamifiedLearningCanister() {
         // Update rewards
         let newRewards = currentProgress.totalRewardPoints + rewardPoints;
 
-        let updatedProgress : UserProgress = {
+        // Update streak
+        let updatedProgress = updateStreak(userId, {
             userId = userId;
             completedModules = completedModules;
-            lessonProgress = newProgress.toArray();
+            lessonProgress = newProgressBuffer.toArray();
             totalRewardPoints = newRewards;
-        };
+            streak = currentProgress.streak;
+            lastActive = currentProgress.lastActive;
+            achievements = currentProgress.achievements;
+        });
+
+        // Check for achievements
+        checkAchievements(userId, updatedProgress, score);
 
         userProgress.put(userId, updatedProgress);
     };
 
     func isModuleComplete(moduleId : ModuleId, progress : [LessonProgress]) : Bool {
-    switch (Array.find(modules, func(m : Module) : Bool { m.id == moduleId })) {
-        case (null) { false };
-        case (?m) {
-            Array.all(
-                m.lessons,
-                func(lesson : Lesson) : Bool {
+        switch (Array.find(modules, func(m : Module) : Bool { m.id == moduleId })) {
+            case (null) { false };
+            case (?m) {
+                for (lesson in m.lessons.vals()) {
                     switch (Array.find(progress, func(p : LessonProgress) : Bool { p.lessonId == lesson.id })) {
-                        case (null) { false };
-                        case (?lp) { lp.completed };
+                        case (null) { return false };
+                        case (?lp) {
+                            if (not lp.completed) {
+                                return false;
+                            };
+                        };
                     };
-                }
-            );
+                };
+                true;
+            };
         };
     };
-};
 
     func createDefaultProgress(userId : UserId) : UserProgress {
         {
@@ -368,6 +601,156 @@ actor class GamifiedLearningCanister() {
             completedModules = [];
             lessonProgress = [];
             totalRewardPoints = 0;
+            streak = 0;
+            lastActive = Time.now();
+            achievements = [];
+        };
+    };
+
+    func updateStreak(userId : UserId, progress : UserProgress) : UserProgress {
+        let now = Time.now();
+        let oneDay = 86_400_000_000_000; // nanoseconds in a day
+        let lastActive = progress.lastActive;
+        
+        // Reset streak if more than 2 days have passed
+        if (now - lastActive > 2 * oneDay) {
+            return {
+                userId = progress.userId;
+                completedModules = progress.completedModules;
+                lessonProgress = progress.lessonProgress;
+                totalRewardPoints = progress.totalRewardPoints;
+                streak = 1;
+                lastActive = now;
+                achievements = progress.achievements;
+            };
+        } 
+        // Increment streak if within 1 day
+        else if (now - lastActive <= oneDay) {
+            return {
+                userId = progress.userId;
+                completedModules = progress.completedModules;
+                lessonProgress = progress.lessonProgress;
+                totalRewardPoints = progress.totalRewardPoints;
+                streak = progress.streak + 1;
+                lastActive = now;
+                achievements = progress.achievements;
+            };
+        }
+        // Maintain streak if between 1-2 days
+        else {
+            return {
+                userId = progress.userId;
+                completedModules = progress.completedModules;
+                lessonProgress = progress.lessonProgress;
+                totalRewardPoints = progress.totalRewardPoints;
+                streak = progress.streak;
+                lastActive = now;
+                achievements = progress.achievements;
+            };
+        };
+    };
+
+    func recommendNextLesson(userId : UserId, moduleId : ModuleId, currentLessonId : LessonId) : ?Lesson {
+        switch (userProgress.get(userId)) {
+            case (null) { null };
+            case (?progress) {
+                // 1. Check if there's another lesson in the same module
+                switch (Array.find(modules, func(m : Module) : Bool { m.id == moduleId })) {
+                    case (null) { null };
+                    case (?e) {
+                        var foundCurrent = false;
+                        for (lesson in e.lessons.vals()) {
+                            // If we passed the current lesson, return the next one
+                            if (foundCurrent) {
+                                // Check if user has already completed this lesson
+                                switch (Array.find(progress.lessonProgress, func(p : LessonProgress) : Bool { p.lessonId == lesson.id })) {
+                                    case (null) { return ?lesson; };
+                                    case (?lp) {
+                                        if (not lp.completed) {
+                                            return ?lesson;
+                                        };
+                                    };
+                                };
+                            };
+                            
+                            if (lesson.id == currentLessonId) {
+                                foundCurrent := true;
+                            };
+                        };
+                        
+                        // 2. If no next lesson in module, find next uncompleted module
+                        for (m in modules.vals()) {
+                            if (m.id != moduleId) {
+                                // Check if user has completed this module
+                                if (Array.find(progress.completedModules, func(id : ModuleId) : Bool { id == m.id }) == null) {
+                                    return ?m.lessons[0]; // Return first lesson of next module
+                                };
+                            };
+                        };
+                        
+                        null; // No recommendations found
+                    };
+                };
+            };
+        };
+    };
+
+    func checkAchievements(userId : UserId, progress : UserProgress, latestScore : Float) {
+        let newAchievements = Buffer.Buffer<Text>(0);
+        let currentAchievements = progress.achievements;
+        
+        // First Steps - Completed first lesson
+        if (progress.lessonProgress.size() > 0 and not Array.contains<Text>(currentAchievements, "First Steps", Text.equal)) {
+            newAchievements.add("First Steps");
+        };
+        
+        // Quick Learner - Completed a lesson with 90%+ on first attempt
+        for (lp in progress.lessonProgress.vals()) {
+            if (lp.attempts == 1 and lp.score >= 90.0 and not Array.contains<Text>(currentAchievements, "Quick Learner", Text.equal)) {
+                newAchievements.add("Quick Learner");
+            };
+        };
+        
+        // Perfect Score - Got 100% on any lesson
+        if (latestScore == 100.0 and not Array.contains<Text>(currentAchievements, "Perfect Score", Text.equal)) {
+            newAchievements.add("Perfect Score");
+        };
+        
+        // Daily Learner - 7-day streak
+        if (progress.streak >= 7 and not Array.contains<Text>(currentAchievements, "Daily Learner", Text.equal)) {
+            newAchievements.add("Daily Learner");
+        };
+        
+        // Critical Thinker - Completed all core skills modules
+        let coreSkillsComplete = Array.all<ModuleId>(progress.completedModules, func(id : ModuleId) : Bool {
+            switch (Array.find(modules, func(m : Module) : Bool { m.id == id })) {
+                case (null) { false };
+                case (?m) { m.category == "Core Skills" };
+            };
+        });
+        
+        if (coreSkillsComplete and not Array.contains<Text>(currentAchievements, "Critical Thinker", Text.equal)) {
+            newAchievements.add("Critical Thinker");
+        };
+        
+        // Add new achievements to progress
+        if (newAchievements.size() > 0) {
+            let updatedAchievements = Buffer.fromArray<Text>(progress.achievements);
+            for (ach in newAchievements.vals()) {
+                updatedAchievements.add(ach);
+            };
+            
+            let updatedProgress : UserProgress = {
+                userId = progress.userId;
+                completedModules = progress.completedModules;
+                lessonProgress = progress.lessonProgress;
+                totalRewardPoints = progress.totalRewardPoints;
+                streak = progress.streak;
+                lastActive = progress.lastActive;
+                achievements = updatedAchievements.toArray();
+            };
+            
+            userProgress.put(userId, updatedProgress);
         };
     };
 

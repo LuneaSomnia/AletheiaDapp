@@ -7,7 +7,7 @@ import Principal "mo:base/Principal";
 import Result "mo:base/Result";
 import Text "mo:base/Text";
 import Time "mo:base/Time";
-import SHA256 "mo:sha256/SHA256";
+import SHA "mo:sha/SHA256"; // Updated SHA256 import for Motoko v8
 
 actor ClaimSubmissionCanister {
     type ClaimType = {
@@ -84,35 +84,35 @@ actor ClaimSubmissionCanister {
     // Submit a new claim with enhanced type handling
     public shared ({caller}) func submitClaim(submission : ClaimSubmission) : async ClaimResult {
         try {
-            // Validate claim type
+            // Validate claim type with proper switch syntax
             let claimType = switch (submission.claimType) {
-                case "text" #text;
-                case "image" #image;
-                case "video" #video;
-                case "audio" #audio;
-                case "articleLink" #articleLink;
-                case "fakeNewsUrl" #fakeNewsUrl;
-                case "other" #other;
-                case _ throw Error.reject("Invalid claim type");
+                case "text" { #text };
+                case "image" { #image };
+                case "video" { #video };
+                case "audio" { #audio };
+                case "articleLink" { #articleLink };
+                case "fakeNewsUrl" { #fakeNewsUrl };
+                case "other" { #other };
+                case (_) { throw Error.reject("Invalid claim type") };
             };
 
             // Validate content based on type
             let validatedContent = switch (submission.content) {
                 case (#text(t)) {
                     if (t.size() > MAX_TEXT_LENGTH) {
-                        throw Error.reject("Text exceeds maximum length");
+                        throw Error.reject("Text exceeds maximum length of " # Int.toText(MAX_TEXT_LENGTH) # " characters");
                     };
                     #text(t);
                 };
                 case (#blob(b)) {
                     if (b.size() > MAX_BLOB_SIZE) {
-                        throw Error.reject("File exceeds 3MB limit");
+                        throw Error.reject("File exceeds size limit of " # Int.toText(MAX_BLOB_SIZE) # " bytes");
                     };
                     #blob(b);
                 };
                 case (#url(u)) {
                     if (not isValidUrl(u)) {
-                        throw Error.reject("Invalid URL format");
+                        throw Error.reject("Invalid URL format. Must start with http:// or https://");
                     };
                     #url(u);
                 };
@@ -121,10 +121,13 @@ actor ClaimSubmissionCanister {
             // Generate unique ID
             let claimId = generateId(caller);
 
-            // Calculate hash for files
+            // Calculate hash for files using updated SHA library
             let fileHash = switch (validatedContent) {
-                case (#blob(b)) ?(SHA256.fromBlob(#sha224, b).toText())
-                case _ null;
+                case (#blob(b)) {
+                    let hashBytes = SHA.sha256(Blob.toArray(b));
+                    ?(Hex.encode(hashBytes));
+                };
+                case _ { null };
             };
 
             // Create claim object
@@ -180,7 +183,7 @@ actor ClaimSubmissionCanister {
 
     // Helper functions
     func generateId(userId : Principal) : Text {
-        let random = (Time.now() % 1000000).toText();
+        let random = (Time.now() % 1_000_000).toText();
         Principal.toText(userId) # "-" # random;
     };
 
@@ -206,10 +209,26 @@ actor ClaimSubmissionCanister {
 
     // Get claim content for verification (Aletheians can access)
     public shared ({caller}) func getClaimContent(claimId : Text) : async Result.Result<ClaimContent, Text> {
-        // In actual implementation, add authorization check for Aletheians
+        // Authorization should be added for Aletheians in actual implementation
         switch (claims.get(claimId)) {
             case (?claim) #ok(claim.content);
             case null #err("Claim not found");
         }
+    };
+    
+    // Hex encoding module for SHA256 output
+    module Hex {
+        public func encode(array : [Nat8]) : Text {
+            var text = "";
+            for (byte in array.vals()) {
+                text := text # toChar(byte >> 4) # toChar(byte & 0x0F);
+            };
+            text;
+        };
+
+        func toChar(n : Nat8) : Text {
+            let chars = "0123456789abcdef";
+            Text.fromChar(chars.chars()[Nat8.toNat(n)]);
+        };
     };
 };

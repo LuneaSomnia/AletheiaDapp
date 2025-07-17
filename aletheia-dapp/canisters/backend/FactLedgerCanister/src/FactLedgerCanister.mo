@@ -7,27 +7,55 @@ import Result "mo:base/Result";
 import Time "mo:base/Time";
 import Option "mo:base/Option";
 import Iter "mo:base/Iter";
+import Text "mo:base/Text";
+import Buffer "mo:base/Buffer";
 
 actor FactLedgerCanister {
     public type FactId = Nat;
     
-    public type Classification = {
+    public type FactStatus = {
+        #PendingReview;
         #Verified;
         #Disputed;
-        #PendingReview;
         #Deprecated;
     };
 
+    public type ClaimClassification = {
+        // Factual Accuracy Verdicts
+        #True;
+        #MostlyTrue;
+        #HalfTruth;
+        #MisleadingContext;
+        #False;
+        #MostlyFalse;
+        #Unsubstantiated;
+        #Outdated;
+        // Intent/Origin/Style Classifications
+        #Misinformation;
+        #Disinformation;
+        #Satire;
+        #Opinion;
+        #Propaganda;
+        #FabricatedContent;
+        #ImposterContent;
+        #ManipulatedContent;
+        #Deepfake;
+        #ConspiracyTheory;
+        // Other classifications can be added here
+    };
+
     public type Evidence = {
-        content : Text;
+        hash : Text;          // Content hash (IPFS CID or similar)
+        storageType : Text;   // "IPFS", "Arweave", "HTTPS", etc.
+        url : ?Text;          // Optional access URL
         timestamp : Int;
-        provider : Principal;
+        provider : Principal; // Submitter principal
     };
 
     public type Verdict = {
-        decision : Bool; // true = accepted, false = rejected
+        classification : ClaimClassification; // Granular classification
         timestamp : Int;
-        verifier : Principal;
+        verifier : Principal;                 // Aletheian principal
         explanation : Text;
     };
 
@@ -38,16 +66,17 @@ actor FactLedgerCanister {
     };
 
     public type PublicProof = {
-        proofType : Text;
-        content : Text;
+        proofType : Text;     // e.g., "ALETHEIA_CONSENSUS"
+        content : Text;       // Proof metadata or signature
     };
 
     public type Fact = {
         id : FactId;
         content : Text;
-        classification : Classification;
+        status : FactStatus;
+        claimClassification : ?ClaimClassification; // Final classification
         evidence : [Evidence];
-        verdicts : [Verdict];
+        verdicts : [Verdict];                      // Individual verdicts
         version : FactVersion;
         publicProof : PublicProof;
         created : Int;
@@ -56,7 +85,6 @@ actor FactLedgerCanister {
 
     public type AddFactRequest = {
         content : Text;
-        classification : Classification;
         evidence : [Evidence];
         publicProof : PublicProof;
     };
@@ -64,15 +92,11 @@ actor FactLedgerCanister {
     public type UpdateFactRequest = {
         id : FactId;
         newContent : Text;
-        newClassification : Classification;
+        newStatus : FactStatus;
+        newClaimClassification : ?ClaimClassification;
         newEvidence : [Evidence];
+        newVerdicts : [Verdict];
         newPublicProof : PublicProof;
-    };
-
-    public type AddVerdictRequest = {
-        factId : FactId;
-        decision : Bool;
-        explanation : Text;
     };
 
     // Stable variables for canister upgrades
@@ -124,7 +148,8 @@ actor FactLedgerCanister {
         let newFact : Fact = {
             id = newId;
             content = request.content;
-            classification = request.classification;
+            status = #PendingReview;
+            claimClassification = null;
             evidence = request.evidence;
             verdicts = [];
             version = {
@@ -146,15 +171,9 @@ actor FactLedgerCanister {
 
     // Create a new version of an existing fact
     public shared (msg) func updateFact(request : UpdateFactRequest) : async Result.Result<Fact, Text> {
-        let caller = msg.caller;
         switch (facts.get(request.id)) {
             case (null) { #err("Fact not found") };
             case (?currentFact) {
-                // Verify caller is the original creator (optional security check)
-                // if (Principal.notEqual(caller, currentFact.creator)) {
-                //     return #err("Unauthorized: Only fact creator can update");
-                // }
-
                 let currentTime = Time.now();
                 let newId = nextId;
 
@@ -162,9 +181,10 @@ actor FactLedgerCanister {
                 let updatedFact : Fact = {
                     id = newId;
                     content = request.newContent;
-                    classification = request.newClassification;
+                    status = request.newStatus;
+                    claimClassification = request.newClaimClassification;
                     evidence = request.newEvidence;
-                    verdicts = []; // Reset verdicts for new version
+                    verdicts = request.newVerdicts;
                     version = {
                         version = currentFact.version.version + 1;
                         previousVersion = ?currentFact.id;
@@ -179,60 +199,12 @@ actor FactLedgerCanister {
                 facts.put(newId, updatedFact);
                 
                 // Update version history
-                let currentHistory = Option.get(factVersions.get(currentFact.id), [currentFact.id]);
+                let currentHistory = Option.get(factVersions.get(request.id), [request.id]);
                 let newHistory = Array.append(currentHistory, [newId]);
-                factVersions.put(currentFact.id, newHistory);
+                factVersions.put(request.id, newHistory);
                 
                 nextId += 1;
 
-                #ok(updatedFact)
-            };
-        }
-    };
-
-    // Add a verdict to a fact
-    public shared (msg) func addVerdict(request : AddVerdictRequest) : async Result.Result<Fact, Text> {
-        switch (facts.get(request.factId)) {
-            case (null) { #err("Fact not found") };
-            case (?fact) {
-                let caller = msg.caller;
-                let currentTime = Time.now();
-
-                let newVerdict : Verdict = {
-                    decision = request.decision;
-                    timestamp = currentTime;
-                    verifier = caller;
-                    explanation = request.explanation;
-                };
-
-                // Add to existing verdicts
-                let updatedVerdicts = Array.append(fact.verdicts, [newVerdict]);
-                
-                // Determine new classification based on verdicts
-                let acceptedCount = Array.filter(updatedVerdicts, func(v : Verdict) : Bool { v.decision }).size();
-                let rejectedCount = updatedVerdicts.size() - acceptedCount;
-                
-                let newClassification = if (acceptedCount >= 3 and acceptedCount > rejectedCount * 2) {
-                    #Verified
-                } else if (rejectedCount >= 3 and rejectedCount > acceptedCount * 2) {
-                    #Disputed
-                } else {
-                    #PendingReview
-                };
-
-                let updatedFact : Fact = {
-                    id = fact.id;
-                    content = fact.content;
-                    classification = newClassification;
-                    evidence = fact.evidence;
-                    verdicts = updatedVerdicts;
-                    version = fact.version;
-                    publicProof = fact.publicProof;
-                    created = fact.created;
-                    lastUpdated = currentTime;
-                };
-
-                facts.put(fact.id, updatedFact);
                 #ok(updatedFact)
             };
         }
@@ -251,16 +223,38 @@ actor FactLedgerCanister {
         switch (factVersions.get(id)) {
             case (null) { null };
             case (?versionIds) {
-                Array.mapFilter(versionIds, func(id : FactId) : ?Fact { facts.get(id) })
+                // Fixed: Using buffer for safe index access
+                let buffer = Buffer.Buffer<Fact>(0);
+                for (vid in versionIds.vals()) {
+                    switch (facts.get(vid)) {
+                        case (?fact) { buffer.add(fact) };
+                        case null { };
+                    };
+                };
+                ?Buffer.toArray(buffer)
             };
         }
     };
 
-    public query func getFactsByClassification(classification : Classification) : async [Fact] {
+    public query func getFactsByStatus(status : FactStatus) : async [Fact] {
         Iter.toArray(
             Iter.filter(
                 facts.vals(),
-                func(fact : Fact) : Bool { fact.classification == classification }
+                func(fact : Fact) : Bool { fact.status == status }
+            )
+        )
+    };
+
+    public query func getFactsByClassification(classification : ClaimClassification) : async [Fact] {
+        Iter.toArray(
+            Iter.filter(
+                facts.vals(),
+                func(fact : Fact) : Bool {
+                    switch (fact.claimClassification) {
+                        case (?cc) { cc == classification };
+                        case null { false };
+                    }
+                }
             )
         )
     };
@@ -275,7 +269,11 @@ actor FactLedgerCanister {
             case (null) { null };
             case (?versions) {
                 let lastIndex = versions.size() - 1;
-                facts.get(versions[lastIndex])
+                if (lastIndex >= 0) {
+                    facts.get(versions[lastIndex])
+                } else {
+                    null
+                }
             };
         }
     };
