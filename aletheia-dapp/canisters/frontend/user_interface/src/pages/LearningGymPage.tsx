@@ -6,12 +6,20 @@ import GlassCard from '../components/GlassCard';
 import GoldButton from '../components/GoldButton';
 import { getLearningModules, getExercise, completeExercise } from '../services/learning';
 
+const badgeList = [
+  { id: 'first', label: 'First Exercise', condition: (completed: number) => completed >= 1 },
+  { id: 'tenlp', label: '10 LP', condition: (points: number) => points >= 10 },
+  { id: 'all', label: 'All Modules', condition: (completed: number, total: number) => completed === total },
+];
+
 const LearningGymPage: React.FC = () => {
   const [modules, setModules] = useState<any[]>([]);
   const [currentExercise, setCurrentExercise] = useState<any>(null);
   const [completedExercises, setCompletedExercises] = useState<string[]>([]);
   const [pointsEarned, setPointsEarned] = useState<number | null>(null);
+  const [totalPoints, setTotalPoints] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -20,13 +28,23 @@ const LearningGymPage: React.FC = () => {
       try {
         const data = await getLearningModules();
         setModules(data);
+        // Calculate total points and completed
+        let total = 0;
+        let completed = 0;
+        data.forEach((m: any) => {
+          if (m.completed) {
+            total += m.points;
+            completed++;
+          }
+        });
+        setTotalPoints(total);
+        setCompletedExercises(data.filter((m: any) => m.completed).map((m: any) => m.id));
       } catch (error) {
         console.error('Failed to fetch modules:', error);
       } finally {
         setIsLoading(false);
       }
     };
-
     fetchModules();
   }, []);
 
@@ -36,6 +54,7 @@ const LearningGymPage: React.FC = () => {
       const exercise = await getExercise(exerciseId);
       setCurrentExercise(exercise);
       setPointsEarned(null);
+      setFeedbackMsg(null);
     } catch (error) {
       console.error('Failed to load exercise:', error);
     } finally {
@@ -49,7 +68,17 @@ const LearningGymPage: React.FC = () => {
       try {
         const result = await completeExercise(currentExercise.id, answers);
         setPointsEarned(result.pointsEarned);
+        let feedback: string | null = null;
+        if ('feedback' in result && typeof result.feedback === 'string' && result.feedback) {
+          feedback = result.feedback;
+        } else if ('correct' in result) {
+          feedback = result.correct ? 'Correct! Well done.' : 'Incorrect. Review the explanation.';
+        } else {
+          feedback = 'Exercise submitted.';
+        }
+        setFeedbackMsg(feedback);
         setCompletedExercises([...completedExercises, currentExercise.id]);
+        setTotalPoints(tp => tp + (result.pointsEarned || 0));
       } catch (error) {
         console.error('Failed to submit exercise:', error);
       } finally {
@@ -57,6 +86,11 @@ const LearningGymPage: React.FC = () => {
       }
     }
   };
+
+  const totalModules = modules.length;
+  const completedCount = completedExercises.length;
+  const progressPercent = totalModules > 0 ? Math.round((completedCount / totalModules) * 100) : 0;
+  const earnedBadges = badgeList.filter(b => b.condition(completedCount, totalModules) || b.condition(totalPoints, totalModules));
 
   if (isLoading && !currentExercise) {
     return (
@@ -78,7 +112,29 @@ const LearningGymPage: React.FC = () => {
         >
           &larr; Back to Dashboard
         </GoldButton>
-        
+
+        {/* Gamification UI: Points, Progress, Badges */}
+        <div className="mb-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-2">
+            <div className="flex items-center gap-4">
+              <span className="text-gold text-xl font-bold">Total Points: {totalPoints} LP</span>
+              <div className="flex gap-2">
+                {earnedBadges.map(badge => (
+                  <span key={badge.id} className="bg-gold text-red-900 px-3 py-1 rounded-full font-semibold shadow">🏅 {badge.label}</span>
+                ))}
+              </div>
+            </div>
+            <div className="flex-1">
+              <div className="w-full bg-red-900 bg-opacity-20 rounded-full h-4 mt-2 md:mt-0">
+                <div
+                  className="bg-gold h-4 rounded-full"
+                  style={{ width: `${progressPercent}%` }}
+                ></div>
+              </div>
+              <div className="text-cream text-xs mt-1 text-right">{completedCount}/{totalModules} modules completed</div>
+            </div>
+          </div>
+        </div>
         {currentExercise ? (
           <>
             {pointsEarned !== null ? (
@@ -87,6 +143,7 @@ const LearningGymPage: React.FC = () => {
                 <div className="text-5xl text-gold mb-4">✓</div>
                 <p className="text-3xl text-gold mb-2">+{pointsEarned} LP</p>
                 <p className="text-cream mb-6">You've earned {pointsEarned} Learning Points</p>
+                {feedbackMsg && <div className="mb-4 text-lg text-cream font-semibold">{feedbackMsg}</div>}
                 <GoldButton 
                   onClick={() => setCurrentExercise(null)}
                   className="w-full max-w-md mx-auto"
@@ -95,10 +152,26 @@ const LearningGymPage: React.FC = () => {
                 </GoldButton>
               </GlassCard>
             ) : (
-              <CriticalThinkingExercise 
-                exercise={currentExercise} 
-                onSubmit={handleSubmitExercise} 
-              />
+              <>
+                {/* AI-Driven Interactive Learning: scenario/mock article/quiz/feedback */}
+                <GlassCard className="p-8 mb-6">
+                  <h2 className="text-2xl font-bold text-gold mb-4">Scenario</h2>
+                  <div className="bg-red-900 bg-opacity-20 rounded-lg p-4 mb-4 text-cream">
+                    {currentExercise.scenario || 'Read the following scenario and answer the questions below.'}
+                  </div>
+                  {currentExercise.mockArticle && (
+                    <div className="bg-yellow-900 bg-opacity-20 border-l-4 border-gold rounded-lg p-4 mb-4 text-cream">
+                      <h3 className="text-lg font-semibold text-gold mb-2">Mock Article</h3>
+                      <div>{currentExercise.mockArticle}</div>
+                    </div>
+                  )}
+                </GlassCard>
+                <CriticalThinkingExercise 
+                  exercise={currentExercise} 
+                  onSubmit={handleSubmitExercise} 
+                />
+                {feedbackMsg && <div className="mt-4 text-lg text-cream font-semibold text-center">{feedbackMsg}</div>}
+              </>
             )}
           </>
         ) : (
@@ -108,7 +181,6 @@ const LearningGymPage: React.FC = () => {
               Improve your ability to identify misinformation through these interactive exercises.
               Earn Learning Points (LP) for each completed module!
             </p>
-            
             <div className="space-y-6">
               {modules.map((module) => (
                 <div 

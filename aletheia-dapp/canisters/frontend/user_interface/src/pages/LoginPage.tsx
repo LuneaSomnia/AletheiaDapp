@@ -9,6 +9,8 @@ const LoginPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
   const [showTutorial, setShowTutorial] = useState(true);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
   const navigate = useNavigate();
   const { authenticate } = useAuth();
 
@@ -88,6 +90,35 @@ const LoginPage: React.FC = () => {
         ))}
       </div>
 
+      {/* Terms Modal */}
+      {showTermsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+          <div className="bg-white rounded-lg shadow-lg max-w-lg w-full p-6 relative overflow-y-auto max-h-[80vh]">
+            <button
+              className="absolute top-2 right-2 text-gray-600 hover:text-black text-xl font-bold"
+              onClick={() => setShowTermsModal(false)}
+              aria-label="Close Terms Modal"
+            >
+              &times;
+            </button>
+            <h2 className="text-2xl font-bold mb-4 text-center">Terms of Service & Privacy Policy</h2>
+            <div className="text-gray-800 text-sm space-y-4 max-h-[60vh] overflow-y-auto">
+              <p><strong>Terms of Service:</strong> By creating an account and using Aletheia, you agree to abide by our community guidelines, respect other users, and not misuse the platform. You acknowledge that your activity may be recorded for security and moderation purposes.</p>
+              <p><strong>Privacy Policy:</strong> We value your privacy. Your personal data will be handled securely and will not be shared with third parties without your consent, except as required by law. For more details, please refer to our full privacy policy on our website.</p>
+              <p>This is a summary. Please review the full Terms of Service and Privacy Policy for complete details.</p>
+            </div>
+            <div className="mt-6 flex justify-center">
+              <button
+                className="bg-gold text-white px-4 py-2 rounded hover:bg-yellow-600"
+                onClick={() => setShowTermsModal(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <GlassCard className="w-full max-w-md z-10">
         <h1 className="text-3xl font-bold text-center text-cream mb-2">
           Welcome to Aletheia
@@ -132,10 +163,29 @@ const LoginPage: React.FC = () => {
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            <GoldButton onClick={handleLogin} disabled={isLoading}>
+            {/* Terms acceptance checkbox */}
+            <div className="flex items-center mb-2">
+              <input
+                id="accept-terms"
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={e => setAcceptedTerms(e.target.checked)}
+                className="mr-2 accent-gold"
+              />
+              <label htmlFor="accept-terms" className="text-cream text-sm">
+                I agree to the{' '}
+                <button
+                  type="button"
+                  className="text-gold underline hover:text-yellow-400 focus:outline-none"
+                  onClick={() => setShowTermsModal(true)}
+                >
+                  Terms of Service & Privacy Policy
+                </button>
+              </label>
+            </div>
+            <GoldButton onClick={handleLogin} disabled={isLoading || !acceptedTerms}>
               {isLoading ? 'Connecting...' : 'Login as User'}
             </GoldButton>
-            
             <GoldButton 
               onClick={() => window.location.href = '/aletheian'}
               className="bg-purple-900 border-purple-700 hover:from-purple-900 hover:to-purple-800"

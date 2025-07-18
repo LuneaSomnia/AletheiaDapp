@@ -10,6 +10,7 @@ import { submitClaim } from '../services/claims';
 const SubmitClaimPage: React.FC = () => {
   const [submissionResult, setSubmissionResult] = useState<{ claimId: string; questions: string[] } | null>(null);
   const [isLearning, setIsLearning] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const navigate = useNavigate();
 
   const handleFormSubmit = async (data: {
@@ -28,12 +29,37 @@ const SubmitClaimPage: React.FC = () => {
     );
     if (result) {
       setSubmissionResult(result);
+      setShowSuccessModal(true);
     }
   };
 
   return (
     <div className="min-h-screen p-4">
       <div className="max-w-4xl mx-auto">
+        {/* Success Modal */}
+        {showSuccessModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+            <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6 relative">
+              <button
+                className="absolute top-2 right-2 text-gray-600 hover:text-black text-xl font-bold"
+                onClick={() => setShowSuccessModal(false)}
+                aria-label="Close Success Modal"
+              >
+                &times;
+              </button>
+              <h2 className="text-2xl font-bold mb-4 text-center text-gold">Claim Submitted Successfully!</h2>
+              <div className="text-gray-800 text-base mb-4 text-center">
+                Your claim has been submitted for verification.<br />
+                <span className="text-sm text-gray-600">Next steps: Track your claim status in your dashboard. You will be notified when the verification is complete.</span>
+              </div>
+              <div className="flex justify-center">
+                <GoldButton onClick={() => setShowSuccessModal(false)}>
+                  Close
+                </GoldButton>
+              </div>
+            </div>
+          </div>
+        )}
         {!submissionResult ? (
           <ClaimForm onSubmit={handleFormSubmit} />
         ) : (
