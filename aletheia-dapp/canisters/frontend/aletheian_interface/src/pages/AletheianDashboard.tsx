@@ -7,12 +7,15 @@ import ClaimAssignment from '../components/ClaimAssignment';
 import ReputationBadge from '../components/ReputationBadge';
 import { useAuth } from '../services/auth';
 import { getAletheianClaims } from '../services/claims';
+import { useSelector } from 'react-redux';
 
 const AletheianDashboard: React.FC = () => {
   const { user } = useAuth();
   const [assignments, setAssignments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate(); // Correct usage
+  // Get unread notifications from Redux if available, else mock
+  const unreadCount = useSelector((state: any) => state.notifications ? state.notifications.filter((n: any) => !n.read).length : 2);
   useEffect(() => {
     const fetchClaims = async () => {
       if (user) {
@@ -70,7 +73,20 @@ const AletheianDashboard: React.FC = () => {
       <div className="max-w-6xl mx-auto">
         <header className="flex justify-between items-center py-6 mb-8">
           <h1 className="text-3xl font-bold text-cream">Aletheian Dashboard</h1>
-          <div className="flex gap-4">
+          <div className="flex gap-4 items-center">
+            {/* Notification Bell */}
+            <button
+              className="relative focus:outline-none mr-2"
+              aria-label="Open Notification Center"
+              onClick={() => navigate('/notifications')}
+            >
+              <span className="text-3xl text-gold">🔔</span>
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-gold text-red-900 text-xs font-bold rounded-full px-2 py-0.5 border-2 border-red-900">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
             <ReputationBadge 
               xp={user.xp} 
               rank={user.rank} 
@@ -81,6 +97,44 @@ const AletheianDashboard: React.FC = () => {
             </PurpleButton>
           </div>
         </header>
+
+        {/* Ongoing Tasks Section */}
+        <div className="mb-10">
+          <GlassCard className="border-2 border-gold bg-gold bg-opacity-10 shadow-lg">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-2xl">⏳</span>
+              <h2 className="text-2xl font-bold text-gold">Ongoing Tasks</h2>
+            </div>
+            {isLoading ? (
+              <div className="text-center py-6">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gold mx-auto"></div>
+                <p className="mt-2 text-cream">Loading active claims...</p>
+              </div>
+            ) : assignments.length === 0 ? (
+              <p className="text-cream text-center py-4">No ongoing tasks at the moment.</p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {assignments.map((assignment) => (
+                  <div key={assignment.id} className="flex items-center justify-between bg-red-900 bg-opacity-20 rounded-lg px-4 py-3 border border-gold border-opacity-30 hover:border-gold transition cursor-pointer" onClick={() => handleClaimSelect(assignment.id)}>
+                    <div className="flex items-center gap-3">
+                      <span className="inline-block px-2 py-1 rounded-full text-xs font-bold bg-yellow-500 text-red-900">Active</span>
+                      <span className="font-semibold text-cream">{assignment.text}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-xs text-gold font-bold">Deadline: {assignment.deadline ? new Date(assignment.deadline).toLocaleString() : 'N/A'}</span>
+                      <PurpleButton
+                        className="small-button"
+                        onClick={() => handleClaimSelect(assignment.id)}
+                      >
+                        Review
+                      </PurpleButton>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </GlassCard>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <GlassCard className="lg:col-span-2">
