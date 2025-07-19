@@ -58,3 +58,81 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(212, 175, 55, 0.7);
 }
+
+/* Luxury Themed Buttons */
+.button-gold {
+  background: linear-gradient(90deg, var(--gold-light) 0%, var(--gold-dark) 100%);
+  color: var(--purple-darker);
+  border: none;
+  border-radius: 0.75rem;
+  padding: 0.75rem 2rem;
+  font-weight: 700;
+  font-size: 1.1rem;
+  box-shadow: 0 4px 24px 0 rgba(212, 175, 55, 0.15);
+  transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+}
+.button-gold:hover, .button-gold:focus {
+  background: linear-gradient(90deg, var(--gold-dark) 0%, var(--gold-light) 100%);
+  box-shadow: 0 6px 32px 0 rgba(212, 175, 55, 0.25);
+  transform: translateY(-2px) scale(1.03);
+  outline: none;
+}
+.button-gold:active {
+  background: var(--gold-dark);
+  box-shadow: 0 2px 8px 0 rgba(212, 175, 55, 0.10);
+  transform: scale(0.98);
+}
+
+.button-purple {
+  background: linear-gradient(90deg, var(--purple-dark) 0%, var(--purple-darker) 100%);
+  color: var(--cream);
+  border: none;
+  border-radius: 0.75rem;
+  padding: 0.75rem 2rem;
+  font-weight: 700;
+  font-size: 1.1rem;
+  box-shadow: 0 4px 24px 0 rgba(75, 0, 130, 0.15);
+  transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+}
+.button-purple:hover, .button-purple:focus {
+  background: linear-gradient(90deg, var(--purple-darker) 0%, var(--purple-dark) 100%);
+  box-shadow: 0 6px 32px 0 rgba(75, 0, 130, 0.25);
+  transform: translateY(-2px) scale(1.03);
+  outline: none;
+}
+.button-purple:active {
+  background: var(--purple-darker);
+  box-shadow: 0 2px 8px 0 rgba(75, 0, 130, 0.10);
+  transform: scale(0.98);
+}
+
+.button-glass {
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--cream);
+  border: 1.5px solid var(--gold-light);
+  border-radius: 0.75rem;
+  padding: 0.75rem 2rem;
+  font-weight: 700;
+  font-size: 1.1rem;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 24px 0 rgba(75, 0, 130, 0.10);
+  transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+}
+.button-glass:hover, .button-glass:focus {
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 6px 32px 0 rgba(212, 175, 55, 0.18);
+  transform: translateY(-2px) scale(1.03);
+  outline: none;
+}
+.button-glass:active {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 8px 0 rgba(75, 0, 130, 0.08);
+  transform: scale(0.98);
+}
