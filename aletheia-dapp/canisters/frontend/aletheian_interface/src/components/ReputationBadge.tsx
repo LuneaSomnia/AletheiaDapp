@@ -2,10 +2,20 @@
 import React from 'react';
 import GlassCard from './GlassCard';
 
-const ReputationBadge: React.FC<{ xp: number; rank: string; badges: string[] }> = ({ 
+interface ReputationBadgeProps {
+  xp: number;
+  rank: string;
+  badges: string[];
+  warnings?: string[];
+  penalties?: string[];
+}
+
+const ReputationBadge: React.FC<ReputationBadgeProps> = ({ 
   xp, 
   rank, 
-  badges 
+  badges, 
+  warnings = [],
+  penalties = []
 }) => {
   const getRankColor = () => {
     switch (rank) {
@@ -43,6 +53,32 @@ const ReputationBadge: React.FC<{ xp: number; rank: string; badges: string[] }> 
           ))}
         </div>
       </div>
+
+      {(warnings.length > 0 || penalties.length > 0) && (
+        <div className="mt-6">
+          <h4 className="text-lg font-semibold text-cream mb-2">Warnings & Penalties</h4>
+          {warnings.length > 0 && (
+            <div className="mb-2">
+              <span className="text-yellow-400 font-bold">Warnings:</span>
+              <ul className="list-disc list-inside text-yellow-200">
+                {warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {penalties.length > 0 && (
+            <div>
+              <span className="text-red-400 font-bold">Penalties:</span>
+              <ul className="list-disc list-inside text-red-200">
+                {penalties.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
     </GlassCard>
   );
 };

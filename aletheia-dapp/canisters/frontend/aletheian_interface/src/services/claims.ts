@@ -55,3 +55,57 @@ export const getClaimDetails = async (claimId: string) => {
     ]
   };
 };
+
+// Assign a claim to a user (mock implementation)
+export const assignClaimToUser = async (claimId: string, principal: string) => {
+  // In production, call canister method
+  return { success: true, message: `Claim ${claimId} assigned to user ${principal}` };
+};
+
+// Accept a claim (mock implementation)
+export const acceptClaim = async (claimId: string, principal: string) => {
+  // In production, call canister method
+  return { success: true, message: `User ${principal} accepted claim ${claimId}` };
+};
+
+// Submit verification for a claim (mock implementation)
+export const verifyClaim = async (claimId: string, principal: string, verdict: string, explanation: string, evidenceLinks: string[]) => {
+  // In production, call canister method
+  return { success: true, message: `Verification submitted for claim ${claimId}` };
+};
+
+// Escalate a claim for further review (mock implementation)
+export const escalateClaim = async (claimId: string, principal: string, rationale: string) => {
+  // In production, call canister method
+  return { success: true, message: `Claim ${claimId} escalated by user ${principal}` };
+};
+
+// AI integration: Blockchain duplicate search (mock implementation)
+export const aiBlockchainDuplicateSearch = async (claimText: string) => {
+  // In production, call AI service
+  return [
+    {
+      id: 'blockchain-001',
+      text: 'Similar claim found on blockchain: "Drinking bleach cures COVID-19"',
+      matchScore: 0.97,
+      link: 'https://blockchain.example/claim/001'
+    }
+  ];
+};
+
+// AI integration: Information retrieval (mock implementation)
+export const aiInformationRetrieval = async (claimText: string) => {
+  // In production, call AI service
+  return [
+    {
+      title: 'WHO Myth Busters',
+      summary: 'WHO states that drinking bleach does not cure COVID-19 and is dangerous.',
+      url: 'https://www.who.int/emergencies/diseases/novel-coronavirus-2019/advice-for-public/myth-busters'
+    },
+    {
+      title: 'CDC COVID-19 Guidelines',
+      summary: 'CDC does not recommend any unproven treatments for COVID-19.',
+      url: 'https://www.cdc.gov/coronavirus/2019-ncov/if-you-are-sick/steps-when-sick.html'
+    }
+  ];
+};

@@ -5,7 +5,9 @@ const initialState = {
   assignments: [],
   notifications: [],
   profile: null,
-  finance: null
+  finance: null,
+  claimQueue: [], // Added claim queue state
+  reputation: null // Added reputation state
 };
 
 function appReducer(state = initialState, action: any) {
@@ -18,6 +20,10 @@ function appReducer(state = initialState, action: any) {
       return { ...state, profile: action.payload };
     case 'SET_FINANCE':
       return { ...state, finance: action.payload };
+    case 'SET_CLAIM_QUEUE': // Action for claim queue
+      return { ...state, claimQueue: action.payload };
+    case 'SET_REPUTATION': // Action for reputation
+      return { ...state, reputation: action.payload };
     default:
       return state;
   }
