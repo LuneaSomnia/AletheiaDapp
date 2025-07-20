@@ -266,7 +266,8 @@ actor VerificationWorkflowCanister {
             };
             case (?verdict) {
                 // Combine explanations
-                let combinedExplanation = Text.join("\n\n", Buffer.toArray(explanations));
+                let explanationArr = Buffer.toArray<Text>(explanations);
+                let combinedExplanation = joinText("\n\n", explanationArr);
                 #ok((
                     verdict, 
                     combinedExplanation, 
@@ -321,3 +322,18 @@ actor VerificationWorkflowCanister {
         Iter.toArray(tasks.vals())
     };
 };
+
+// Helper: Join array of Text with separator (Motoko 0.9.8 compatible)
+func joinText(sep : Text, arr : [Text]) : Text {
+    var result = "";
+    var first = true;
+    for (t in arr.vals()) {
+        if (first) {
+            result #= t;
+            first := false;
+        } else {
+            result #= sep # t;
+        }
+    };
+    result
+}
