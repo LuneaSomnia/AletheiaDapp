@@ -1,10 +1,32 @@
 import HashMap "mo:base/HashMap";
 import Text "mo:base/Text";
 import Error "mo:base/Error";
-import Http "mo:base/Http";
 import Blob "mo:base/Blob";
 import Array "mo:base/Array";
 import Option "mo:base/Option";
+import Principal "mo:base/Principal";
+import Nat "mo:base/Nat";
+import Nat16 "mo:base/Nat16";
+import Time "mo:base/Time";
+
+// Define the management canister interface for http_request
+let ic : actor {
+  http_request : {
+    url : Text;
+    method : Text;
+    headers : [(Text, Text)];
+    body : [Nat8];
+    transform : ?{
+      function : Principal;
+      context : [Nat8];
+    };
+    max_response_bytes : ?Nat;
+  } -> async {
+    status_code : Nat16;
+    headers : [(Text, Text)];
+    body : [Nat8];
+  };
+} = actor ("aaaaa-aa");
 
 actor {
   type ApiKey = {
@@ -48,7 +70,7 @@ actor {
         
         // Move first backup to active
         let newKey = backups[0];
-        let updatedBackups = Array.tabulate(backups.size() - 1, func i { backups[i + 1] });
+        let updatedBackups : [Text] = Array.tabulate<Text>(backups.size() - 1, func i { backups[i + 1] }); // Explicit type annotation
         
         activeKeys.put(service, {
           value = newKey;
@@ -114,21 +136,21 @@ actor {
       case _ { "" };
     };
     
-    let request : HTTP.HttpRequestArgs = {
+    let response = await ic.http_request({
       url = url;
       method = "POST";
-      body = Blob.toArray(Text.encodeUtf8(requestBody));
+      body = Blob.toArray(Text.encodeUtf8(requestBody)); // Fix: ensure [Nat8] type
       headers = requestHeaders;
       transform = null;
-    };
-    
-    let response = await HTTP.http_request(request);
+      max_response_bytes = null;
+    });
     
     if (response.status_code != 200) {
-      throw Error.reject("API error: " # Nat.toText(response.status_code));
+      return "API error: " # Nat.toText(Nat16.toNat(response.status_code));
     };
-    
-    Text.decodeUtf8(Blob.fromArray(response.body)) 
-      |? "Invalid UTF-8 response";
-  };
-};
+    switch (Text.decodeUtf8(Blob.fromArray(response.body))) {
+      case (?text) text;
+      case null "Invalid UTF-8 response";
+    }
+  }
+}
