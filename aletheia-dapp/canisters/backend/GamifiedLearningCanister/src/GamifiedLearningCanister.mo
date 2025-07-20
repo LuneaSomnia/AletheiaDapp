@@ -700,36 +700,38 @@ actor class GamifiedLearningCanister() {
         let currentAchievements = progress.achievements;
         
         // First Steps - Completed first lesson
-        if (progress.lessonProgress.size() > 0 and not Array.contains<Text>(currentAchievements, "First Steps", Text.equal)) {
+        if (progress.lessonProgress.size() > 0 and not arrayContains<Text>(currentAchievements, "First Steps", Text.equal)) {
             newAchievements.add("First Steps");
         };
         
         // Quick Learner - Completed a lesson with 90%+ on first attempt
         for (lp in progress.lessonProgress.vals()) {
-            if (lp.attempts == 1 and lp.score >= 90.0 and not Array.contains<Text>(currentAchievements, "Quick Learner", Text.equal)) {
+            if (lp.attempts == 1 and lp.score >= 90.0 and not arrayContains<Text>(currentAchievements, "Quick Learner", Text.equal)) {
                 newAchievements.add("Quick Learner");
             };
         };
         
         // Perfect Score - Got 100% on any lesson
-        if (latestScore == 100.0 and not Array.contains<Text>(currentAchievements, "Perfect Score", Text.equal)) {
+        if (latestScore == 100.0 and not arrayContains<Text>(currentAchievements, "Perfect Score", Text.equal)) {
             newAchievements.add("Perfect Score");
         };
         
         // Daily Learner - 7-day streak
-        if (progress.streak >= 7 and not Array.contains<Text>(currentAchievements, "Daily Learner", Text.equal)) {
+        if (progress.streak >= 7 and not arrayContains<Text>(currentAchievements, "Daily Learner", Text.equal)) {
             newAchievements.add("Daily Learner");
         };
         
         // Critical Thinker - Completed all core skills modules
-        let coreSkillsComplete = Array.all<ModuleId>(progress.completedModules, func(id : ModuleId) : Bool {
-            switch (Array.find(modules, func(m : Module) : Bool { m.id == id })) {
-                case (null) { false };
-                case (?m) { m.category == "Core Skills" };
+        var coreSkillsComplete = true;
+        for (id in progress.completedModules.vals()) {
+            let found = Array.find(modules, func(m : Module) : Bool { m.id == id });
+            switch (found) {
+                case (null) { coreSkillsComplete := false };
+                case (?m) { if (m.category != "Core Skills") { coreSkillsComplete := false } };
             };
-        });
+        };
         
-        if (coreSkillsComplete and not Array.contains<Text>(currentAchievements, "Critical Thinker", Text.equal)) {
+        if (coreSkillsComplete and not arrayContains<Text>(currentAchievements, "Critical Thinker", Text.equal)) {
             newAchievements.add("Critical Thinker");
         };
         
@@ -768,4 +770,12 @@ actor class GamifiedLearningCanister() {
         );
         userProgressEntries := [];
     };
+
+    // Helper function to check if an array contains a value using a custom equality function
+    func arrayContains<T>(arr : [T], value : T, eq : (T, T) -> Bool) : Bool {
+        for (v in arr.vals()) {
+            if (eq(v, value)) return true;
+        };
+        false
+    }
 };
