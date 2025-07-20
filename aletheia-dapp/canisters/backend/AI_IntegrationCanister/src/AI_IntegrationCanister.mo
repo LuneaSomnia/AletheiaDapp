@@ -8,8 +8,9 @@ import Text "mo:base/Text";
 import Time "mo:base/Time";
 import Nat "mo:base/Nat";
 import Blob "mo:base/Blob";
-import JSON "mo:json/JSON";
-import Http "mo:http/Http";
+import Option "mo:base/Option";
+// import JSON "mo:json/JSON"; // TODO: Provide or implement a JSON library compatible with your Motoko version
+// import Http "mo:http/Http"; // TODO: Provide or implement an HTTP library compatible with your Motoko version
 import ExperimentalCycles "mo:base/ExperimentalCycles";
 
 actor AI_IntegrationCanister {
@@ -72,6 +73,23 @@ actor AI_IntegrationCanister {
     stable var deepfakeModelVersion : Text = "deepware-v2";
     stable var apiKeys : [(Text, Text)] = [];
     stable var feedbackStore : [AIFeedback] = [];
+
+    // ========== AI Model API Key Placeholders ==========
+    // Place your API keys for each LLM here. Replace the empty strings with your actual keys.
+    let questionModelApiKey : Text = "<QUESTION_MODEL_API_KEY>"; // TODO: Insert your API key
+    let researchModelApiKey : Text = "<RESEARCH_MODEL_API_KEY>"; // TODO: Insert your API key
+    let synthesisModelApiKey : Text = "<SYNTHESIS_MODEL_API_KEY>"; // TODO: Insert your API key
+    let deepfakeModelApiKey : Text = "<DEEPFAKE_MODEL_API_KEY>"; // TODO: Insert your API key
+    let feedbackModelApiKey : Text = "<FEEDBACK_MODEL_API_KEY>"; // TODO: Insert your API key
+    let consensusModelApiKey : Text = "<CONSENSUS_MODEL_API_KEY>"; // TODO: Insert your API key
+
+    // ========== AI Model Logic Sections ==========
+    // 1. Question Generation Model
+    // 2. Research/Information Retrieval Model
+    // 3. Synthesis/Consensus Model
+    // 4. Deepfake/Media Analysis Model
+    // 5. Feedback Model
+    // 6. Duplicate Detection/Consensus Model
 
     // AI Module 1: Question Mirror (Question Generation)
     public shared func generateQuestions(claim : Claim) : async Result.Result<QuestionSet, Text> {
@@ -298,106 +316,150 @@ actor AI_IntegrationCanister {
     func _parseQuestionResponse(response : Text) : { questions : [Text]; explanations : [Text] } {
         try {
             let json = JSON.parse(response);
-            let results = JSON.getField(json, "choices").?[0]?.getField("message")?.getField("content")?.toText();
-            
-            let parsed = JSON.parse(results);
-            let items = JSON.getField(parsed, "questions")?.toArray() ?? [];
-            
+            let result = switch (JSON.getField(json, "choices")) {
+                case (?choices) switch (Array.get(choices, 0)) {
+                    case (?choice) switch (JSON.getField(choice, "message")) {
+                        case (?msg) switch (JSON.getField(msg, "content")) {
+                            case (?content) JSON.toText(content);
+                            case null "";
+                        };
+                        case null "";
+                    };
+                    case null "";
+                };
+                case null "";
+            };
+            let parsed = JSON.parse(result);
+            let items = switch (JSON.getField(parsed, "questions")) {
+                case (?arr) JSON.toArray(arr);
+                case null [];
+            };
             let questions = Buffer.Buffer<Text>(0);
             let explanations = Buffer.Buffer<Text>(0);
-            
             for (item in items.vals()) {
-                questions.add(JSON.getField(item, "question")?.toText() ?? "");
-                explanations.add(JSON.getField(item, "explanation")?.toText() ?? "");
+                let q = switch (JSON.getField(item, "question")) {
+                    case (?v) JSON.toText(v);
+                    case null "";
+                };
+                let e = switch (JSON.getField(item, "explanation")) {
+                    case (?v) JSON.toText(v);
+                    case null "";
+                };
+                questions.add(q);
+                explanations.add(e);
             };
-            
             { questions = questions.toArray(); explanations = explanations.toArray() };
         } catch (e) {
-            // Fallback if parsing fails
-            {
-                questions = ["What evidence supports this claim?", "Who are the primary sources?"];
-                explanations = ["Helps evaluate supporting evidence", "Examines source credibility"];
-            }
-        };
+            { questions = ["What evidence supports this claim?", "Who are the primary sources?"]; explanations = ["Helps evaluate supporting evidence", "Examines source credibility"] }
+        }
     };
 
     func _parseResearchResponse(response : Text) : [ResearchResult] {
         try {
             let json = JSON.parse(response);
-            let results = JSON.getField(json, "choices").?[0]?.getField("message")?.getField("content")?.toText();
-            
-            let parsed = JSON.parse(results);
-            let items = JSON.getField(parsed, "results")?.toArray() ?? [];
-            
+            let result = switch (JSON.getField(json, "choices")) {
+                case (?choices) switch (Array.get(choices, 0)) {
+                    case (?choice) switch (JSON.getField(choice, "message")) {
+                        case (?msg) switch (JSON.getField(msg, "content")) {
+                            case (?content) JSON.toText(content);
+                            case null "";
+                        };
+                        case null "";
+                    };
+                    case null "";
+                };
+                case null "";
+            };
+            let parsed = JSON.parse(result);
+            let items = switch (JSON.getField(parsed, "results")) {
+                case (?arr) JSON.toArray(arr);
+                case null [];
+            };
             let buffer = Buffer.Buffer<ResearchResult>(0);
             for (item in items.vals()) {
-                buffer.add({
-                    sourceUrl = JSON.getField(item, "url")?.toText() ?? "";
-                    sourceName = JSON.getField(item, "source")?.toText() ?? "Unknown";
-                    credibilityScore = JSON.getField(item, "credibility")?.toFloat() ?? 0.7;
-                    summary = JSON.getField(item, "summary")?.toText() ?? "";
-                });
+                let sourceUrl = switch (JSON.getField(item, "url")) {
+                    case (?v) JSON.toText(v);
+                    case null "";
+                };
+                let sourceName = switch (JSON.getField(item, "source")) {
+                    case (?v) JSON.toText(v);
+                    case null "Unknown";
+                };
+                let credibilityScore = switch (JSON.getField(item, "credibility")) {
+                    case (?v) JSON.toFloat(v);
+                    case null 0.7;
+                };
+                let summary = switch (JSON.getField(item, "summary")) {
+                    case (?v) JSON.toText(v);
+                    case null "";
+                };
+                buffer.add({ sourceUrl = sourceUrl; sourceName = sourceName; credibilityScore = credibilityScore; summary = summary });
             };
             buffer.toArray();
         } catch (e) {
-            // Fallback
-            [{
-                sourceUrl = "https://example.com/fallback";
-                sourceName = "Fallback Source";
-                credibilityScore = 0.8;
-                summary = "Summary unavailable due to parsing error";
-            }]
-        };
+            [{ sourceUrl = "https://example.com/fallback"; sourceName = "Fallback Source"; credibilityScore = 0.8; summary = "Summary unavailable due to parsing error" }]
+        }
     };
 
     func _parseSynthesisResponse(response : Text) : Report {
         try {
             let json = JSON.parse(response);
-            let content = JSON.getField(json, "choices").?[0]?.getField("message")?.getField("content")?.toText() ?? "";
-            
-            // Extract structured components from response
-            let verdict = _extractBetween(content, "HEADLINE:", "SUMMARY:") 
-                ?? "Undetermined: Verification incomplete";
-                
-            let explanation = _extractBetween(content, "SUMMARY:", "EVIDENCE:") 
-                ?? "Detailed explanation unavailable";
-                
-            let evidenceText = _extractAfter(content, "EVIDENCE:") 
-                ?? "- Evidence listing failed";
-                
-            let evidence = Text.split(evidenceText, #text "\n-")
-                |> Array.map<Text, Text>(_, func(t) = "-" # t);
-            
-            { verdict; explanation; evidence };
+            let content = switch (JSON.getField(json, "choices")) {
+                case (?choices) switch (Array.get(choices, 0)) {
+                    case (?choice) switch (JSON.getField(choice, "message")) {
+                        case (?msg) switch (JSON.getField(msg, "content")) {
+                            case (?content) JSON.toText(content);
+                            case null "";
+                        };
+                        case null "";
+                    };
+                    case null "";
+                };
+                case null "";
+            };
+            let verdict = Option.get(_extractBetween(content, "HEADLINE:", "SUMMARY:"), "Undetermined: Verification incomplete");
+            let explanation = Option.get(_extractBetween(content, "SUMMARY:", "EVIDENCE:"), "Detailed explanation unavailable");
+            let evidenceText = Option.get(_extractAfter(content, "EVIDENCE:"), "- Evidence listing failed");
+            let evidence = Array.map<Text, Text>(Text.split(evidenceText, #text "\n-"), func(t) { "-" # t });
+            { verdict = verdict; explanation = explanation; evidence = evidence };
         } catch (e) {
-            // Fallback
-            {
-                verdict = "Fallback Verdict";
-                explanation = "Synthesis failed. Original expert explanations used instead.";
-                evidence = ["Evidence reference unavailable"];
-            }
-        };
+            { verdict = "Fallback Verdict"; explanation = "Synthesis failed. Original expert explanations used instead."; evidence = ["Evidence reference unavailable"] }
+        }
     };
 
     func _parseDeepfakeResponse(response : Text) : MediaAnalysis {
         try {
             let json = JSON.parse(response);
-            let content = JSON.getField(json, "choices").?[0]?.getField("message")?.getField("content")?.toText() ?? "";
-            
-            let parsed = JSON.parse(content);
-            {
-                isDeepfake = JSON.getField(parsed, "isDeepfake")?.toBool() ?? false;
-                confidence = JSON.getField(parsed, "confidence")?.toFloat() ?? 0.5;
-                analysis = JSON.getField(parsed, "analysis")?.toText() ?? "Analysis failed";
+            let content = switch (JSON.getField(json, "choices")) {
+                case (?choices) switch (Array.get(choices, 0)) {
+                    case (?choice) switch (JSON.getField(choice, "message")) {
+                        case (?msg) switch (JSON.getField(msg, "content")) {
+                            case (?content) JSON.toText(content);
+                            case null "";
+                        };
+                        case null "";
+                    };
+                    case null "";
+                };
+                case null "";
             };
+            let parsed = JSON.parse(content);
+            let isDeepfake = switch (JSON.getField(parsed, "isDeepfake")) {
+                case (?v) JSON.toBool(v);
+                case null false;
+            };
+            let confidence = switch (JSON.getField(parsed, "confidence")) {
+                case (?v) JSON.toFloat(v);
+                case null 0.5;
+            };
+            let analysis = switch (JSON.getField(parsed, "analysis")) {
+                case (?v) JSON.toText(v);
+                case null "Analysis failed";
+            };
+            { isDeepfake = isDeepfake; confidence = confidence; analysis = analysis };
         } catch (e) {
-            // Fallback
-            {
-                isDeepfake = false;
-                confidence = 0.0;
-                analysis = "Deepfake analysis failed";
-            }
-        };
+            { isDeepfake = false; confidence = 0.0; analysis = "Deepfake analysis failed" }
+        }
     };
 
     // Helper: Extract text between markers
