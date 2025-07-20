@@ -1,4 +1,3 @@
-import HTTP "mo:base/Http";
 import Blob "mo:base/Blob";
 import Text "mo:base/Text";
 import Result "mo:base/Result";
@@ -6,6 +5,27 @@ import Nat8 "mo:base/Nat8";
 import Array "mo:base/Array";
 import Nat "mo:base/Nat";
 import Error "mo:base/Error";
+import Principal "mo:base/Principal";
+import Nat16 "mo:base/Nat16";
+
+// Define the management canister interface for http_request
+let ic : actor {
+  http_request : {
+    url : Text;
+    method : Text;
+    headers : [(Text, Text)];
+    body : [Nat8];
+    transform : ?{
+      function : Principal;
+      context : [Nat8];
+    };
+    max_response_bytes : ?Nat;
+  } -> async {
+    status_code : Nat16;
+    headers : [(Text, Text)];
+    body : [Nat8];
+  };
+} = actor ("aaaaa-aa");
 
 actor {
   let ipfsGateway : Text = "https://ipfs.aletheia.xyz";
@@ -20,17 +40,15 @@ actor {
     
     let requestBody = Blob.toArray(data);
     
-    let request : HTTP.HttpRequestArgs = {
-      url = url;
-      method = "POST";
-      body = requestBody;
-      headers = requestHeaders;
-      transform = null;
-    };
-    
     try {
-      let response = await HTTP.http_request(request);
-      
+      let response = await ic.http_request({
+        url = url;
+        method = "POST";
+        body = requestBody;
+        headers = requestHeaders;
+        transform = null;
+        max_response_bytes = null;
+      });
       if (response.status_code == 200) {
         // Parse CID from response
         let cid = parseCIDFromResponse(Blob.fromArray(response.body));
@@ -39,7 +57,7 @@ actor {
           case (?c) { #ok(c) };
         };
       } else {
-        #err("IPFS upload failed with status: " # Nat.toText(response.status_code))
+        #err("IPFS upload failed with status: " # Nat.toText(Nat16.toNat(response.status_code)))
       };
     } catch (e) {
       #err("HTTP request failed: " # Error.message(e))
@@ -57,24 +75,7 @@ actor {
   public shared query func get(cid : Text) : async Result.Result<Blob, Text> {
     let url = ipfsGateway # "/ipfs/" # cid;
     
-    let request : HTTP.HttpRequestArgs = {
-      url = url;
-      method = "GET";
-      body = [];
-      headers = [];
-      transform = null;
-    };
-    
-    try {
-      let response = await HTTP.http_request(request);
-      
-      if (response.status_code == 200) {
-        #ok(Blob.fromArray(response.body))
-      } else {
-        #err("Failed to retrieve CID: " # cid # ", status: " # Nat.toText(response.status_code))
-      };
-    } catch (e) {
-      #err("HTTP request failed: " # Error.message(e))
-    };
+    // HTTP outcalls are not available in query functions
+    #err("HTTP outcalls are not available in query functions. Use an update call instead.")
   };
 };
