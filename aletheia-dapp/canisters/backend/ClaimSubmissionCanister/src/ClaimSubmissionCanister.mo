@@ -7,7 +7,10 @@ import Principal "mo:base/Principal";
 import Result "mo:base/Result";
 import Text "mo:base/Text";
 import Time "mo:base/Time";
-import SHA "mo:sha/SHA256"; // Updated SHA256 import for Motoko v8
+import Iter "mo:base/Iter";
+import Int "mo:base/Int";
+import Nat8 "mo:base/Nat8";
+// SHA256 not available in Motoko 0.9.8 base library. Use a stub or plug in a compatible library.
 
 actor ClaimSubmissionCanister {
     type ClaimType = {
@@ -48,7 +51,7 @@ actor ClaimSubmissionCanister {
 
     // Stable storage
     stable var claimsEntries : [(Text, Claim)] = [];
-    let claims = HashMap.HashMap<Text, Claim>(0, Text.equal, Text.hash);
+    var claims = HashMap.HashMap<Text, Claim>(0, Text.equal, Text.hash);
 
     // Configuration
     let MAX_TEXT_LENGTH = 5000; // 5000 characters
@@ -121,11 +124,11 @@ actor ClaimSubmissionCanister {
             // Generate unique ID
             let claimId = generateId(caller);
 
-            // Calculate hash for files using updated SHA library
+            // Calculate hash for files (stubbed for Motoko 0.9.8)
             let fileHash = switch (validatedContent) {
                 case (#blob(b)) {
-                    let hashBytes = SHA.sha256(Blob.toArray(b));
-                    ?(Hex.encode(hashBytes));
+                    // TODO: Implement SHA256 hashing for Motoko 0.9.8 or plug in a compatible library
+                    ?"placeholder_hash";
                 };
                 case _ { null };
             };
@@ -183,14 +186,16 @@ actor ClaimSubmissionCanister {
 
     // Helper functions
     func generateId(userId : Principal) : Text {
-        let random = (Time.now() % 1_000_000).toText();
+        let random = Int.toText(Time.now() % 1_000_000);
         Principal.toText(userId) # "-" # random;
     };
 
     func isValidUrl(url : Text) : Bool {
-        Array.some(VALID_URL_PREFIXES, func (prefix : Text) : Bool {
-            Text.startsWith(url, #text prefix)
-        });
+        var found = false;
+        for (prefix in VALID_URL_PREFIXES.vals()) {
+            if (Text.startsWith(url, #text prefix)) { found := true };
+        };
+        found
     };
 
     // Get claim by ID (user can only access their own claims)
@@ -228,7 +233,13 @@ actor ClaimSubmissionCanister {
 
         func toChar(n : Nat8) : Text {
             let chars = "0123456789abcdef";
-            Text.fromChar(chars.chars()[Nat8.toNat(n)]);
+            let iter = Text.toIter(chars);
+            var arr : [var Char] = [var '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'];
+            var i = 0;
+            label l for (c in iter) {
+                if (i < 16) { arr[i] := c; i += 1 } else { break l };
+            };
+            Text.fromChar(arr[Nat8.toNat(n)]);
         };
     };
 };
