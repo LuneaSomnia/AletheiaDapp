@@ -1,4 +1,3 @@
-import InternetIdentity "ic:internet_identity";
 import Principal "mo:base/Principal";
 import HashMap "mo:base/HashMap";
 import Text "mo:base/Text";
@@ -84,15 +83,15 @@ actor UserAccountCanister {
     func generateAnonymousId() : async AnonymousId {
         let random = await Random.blob();
         let bytes = Blob.toArray(random);
-        toHex(Array.tabulate(16, func(i) { 
-            if (i < bytes.size()) bytes[i] else 0 
+        toHex(Array.tabulate<Nat8>(16, func(i : Nat) : Nat8 { 
+            if (i < bytes.size()) bytes[i] else 0 : Nat8
         }));
     };
 
     // Convert byte array to hexadecimal string
     func toHex(bytes : [Nat8]) : Text {
-        let hexChars = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"];
-        Array.foldLeft<Nat8, Text>(bytes, "", func (acc, byte) {
+        let hexChars : [Text] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"];
+        Array.foldLeft<Nat8, Text>(bytes, "", func (acc : Text, byte : Nat8) : Text {
             acc # hexChars[Nat8.toNat(byte >> 4)] # hexChars[Nat8.toNat(byte & 0x0F)]
         })
     };
@@ -190,7 +189,8 @@ actor UserAccountCanister {
 
     // Internet Identity integration
     public shared func getInternetIdentityCanisterId() : async Principal {
-        Principal.fromActor(InternetIdentity);
+        // TODO: Return the correct Internet Identity canister principal here
+        Principal.fromText("aaaaa-aa")
     };
 
     // Admin function for system maintenance

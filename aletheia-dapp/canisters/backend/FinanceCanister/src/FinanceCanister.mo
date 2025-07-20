@@ -11,6 +11,7 @@ import Array "mo:base/Array";
 import Iter "mo:base/Iter";
 import Int "mo:base/Int";
 import Option "mo:base/Option";
+import Buffer "mo:base/Buffer";
 
 
 // Interface for the ICP Ledger
@@ -51,7 +52,7 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
     type TransferError = Ledger.TransferError;
     
     // Admin management
-    stable var admins : [Principal] = [];
+    var admins : [Principal] = [];
     let isAdmin = func (p : Principal) : Bool {
         Option.isSome(Array.find(admins, func (admin : Principal) : Bool { admin == p }))
     };
@@ -91,13 +92,27 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
     
     // Initialize from stable state
     system func postupgrade() {
-        earnings := Trie.fromArray(earningsEntries, Principal.equal, Principal.hash);
-        monthlyXP := Trie.fromArray(monthlyXPEntries, Principal.equal, Principal.hash);
+        earnings := Trie.empty();
+        for ((p, n) in earningsEntries.vals()) {
+            earnings := Trie.put(earnings, key(p), Principal.equal, n : Nat64).0;
+        };
+        monthlyXP := Trie.empty();
+        for ((p, n) in monthlyXPEntries.vals()) {
+            monthlyXP := Trie.put(monthlyXP, key(p), Principal.equal, n : Nat).0;
+        };
     };
     
     system func preupgrade() {
-        earningsEntries := Trie.toArray(earnings);
-        monthlyXPEntries := Trie.toArray(monthlyXP);
+        let earningsBuf = Buffer.Buffer<(Principal, Nat64)>(0);
+        for ((p, n) in Trie.iter(earnings)) {
+            earningsBuf.add((p, n));
+        };
+        earningsEntries := earningsBuf.toArray();
+        let xpBuf = Buffer.Buffer<(Principal, Nat)>(0);
+        for ((p, n) in Trie.iter(monthlyXP)) {
+            xpBuf.add((p, n));
+        };
+        monthlyXPEntries := xpBuf.toArray();
     };
     
     // Internal: Get ledger actor
@@ -106,7 +121,7 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
     // Internal: Calculate account identifier (placeholder - use production implementation)
     func accountIdentifier(principal : Principal, subaccount : ?Blob) : AccountIdentifier {
         let sub = switch (subaccount) {
-            case (null) { Blob.fromArray(Array.init(32, 0 : Nat8)) };
+            case (null) { Blob.fromArray(Array.tabulate<Nat8>(32, func(_ : Nat) : Nat8 { 0 })) };
             case (?sa) { sa };
         };
         
@@ -168,7 +183,7 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
                 distributed += share;
                 
                 let current = Trie.get(earnings, key(user), Principal.equal);
-                let newAmount = Option.get(current, 0) + share;
+                let newAmount : Nat64 = Option.get(current, 0 : Nat64) + share;
                 earnings := Trie.put(earnings, key(user), Principal.equal, newAmount).0;
                 recipientCount += 1;
             };
@@ -260,12 +275,12 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
     // Admin functions
     public shared({ caller }) func addAdmin(newAdmin : Principal) : async () {
         assert isAdmin(caller);
-        if (Option.isNull(Array.find(admins, func (a : Principal) : Bool { a == newAdmin })) {
+        if (Option.isNull(Array.find(admins, func (a : Principal) : Bool { a == newAdmin }))) {
             admins := Array.append(admins, [newAdmin]);
         };
     };
     
-     shared({ caller }) func updateConfig(newConfig : Config) : async () {
+    shared({ caller }) func updateConfig(newConfig : Config) : async () {
         assert isAdmin(caller);
         config := newConfig;
     };
@@ -276,11 +291,11 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
     };
     
     query func getUserEarnings(user : Principal) : async Nat64 {
-        Trie.get(earnings, key(user), Principal.equal) |? 0;
+        Option.get(Trie.get(earnings, key(user), Principal.equal), 0 : Nat64)
     };
     
     query func getMonthlyXP(user : Principal) : async Nat {
-        Trie.get(monthlyXP, key(user), Principal.equal) |? 0;
+        Option.get(Trie.get(monthlyXP, key(user), Principal.equal), 0 : Nat)
     };
     
     query func getTotalMonthlyXP() : async Nat {
@@ -314,3 +329,4 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
     func addTransaction(tx : Transaction) {
         transactions := Array.append(transactions, [tx]);
     };
+}

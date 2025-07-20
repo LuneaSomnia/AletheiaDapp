@@ -114,22 +114,22 @@ const HelpSupportPage: React.FC = () => {
                 <div className="p-4 bg-red-900 bg-opacity-20 rounded-lg border border-gold border-opacity-30">
                   <h3 className="font-bold text-gold mb-2">User Guide</h3>
                   <p className="text-cream mb-2">Complete guide to using Aletheia</p>
-                  <GoldButton className="w-full">Read Guide</GoldButton>
+                  <GoldButton className="w-full" onClick={() => {}}>Read Guide</GoldButton>
                 </div>
                 <div className="p-4 bg-red-900 bg-opacity-20 rounded-lg border border-gold border-opacity-30">
                   <h3 className="font-bold text-gold mb-2">API Documentation</h3>
                   <p className="text-cream mb-2">Developer resources</p>
-                  <GoldButton className="w-full">View Docs</GoldButton>
+                  <GoldButton className="w-full" onClick={() => {}}>View Docs</GoldButton>
                 </div>
                 <div className="p-4 bg-red-900 bg-opacity-20 rounded-lg border border-gold border-opacity-30">
                   <h3 className="font-bold text-gold mb-2">Privacy Policy</h3>
                   <p className="text-cream mb-2">How we protect your data</p>
-                  <GoldButton className="w-full">Read Policy</GoldButton>
+                  <GoldButton className="w-full" onClick={() => {}}>Read Policy</GoldButton>
                 </div>
                 <div className="p-4 bg-red-900 bg-opacity-20 rounded-lg border border-gold border-opacity-30">
                   <h3 className="font-bold text-gold mb-2">Terms of Service</h3>
                   <p className="text-cream mb-2">Platform terms and conditions</p>
-                  <GoldButton className="w-full">Read Terms</GoldButton>
+                  <GoldButton className="w-full" onClick={() => {}}>Read Terms</GoldButton>
                 </div>
               </div>
             </div>

@@ -1,11 +1,23 @@
 // src/services/canisters.ts
 import { Actor, HttpAgent } from '@dfinity/agent';
 
-// Fixed import paths using absolute aliases
-import { idlFactory as userAccountFactory } from 'declarations/UserAccountCanister';
-import { idlFactory as claimSubmissionFactory } from 'declarations/ClaimSubmissionCanister';
-import { idlFactory as factLedgerFactory } from 'declarations/FactLedgerCanister';
-import { idlFactory as learningFactory } from 'declarations/GamifiedLearningCanister';
+// TODO: Run `dfx generate` and ensure the following modules exist
+// import { idlFactory as userAccountFactory } from 'declarations/UserAccountCanister';
+// import { idlFactory as claimSubmissionFactory } from 'declarations/ClaimSubmissionCanister';
+// import { idlFactory as factLedgerFactory } from 'declarations/FactLedgerCanister';
+// import { idlFactory as learningFactory } from 'declarations/GamifiedLearningCanister';
+
+// Temporary stubs for compilation
+const userAccountFactory = {};
+const claimSubmissionFactory = {};
+const factLedgerFactory = {};
+const learningFactory = {};
+
+// Temporary stubs for type imports
+type UserAccountService = any;
+type ClaimSubmissionService = any;
+type FactLedgerService = any;
+type LearningService = any;
 
 // Environment variables setup (add to your .env file)
 const CANISTER_IDS = {
@@ -41,28 +53,28 @@ export const createActor = <T>(canisterId: string, idlFactory: any): T => {
 
 // Typed actor getters
 export const getUserAccountActor = () => {
-  return createActor<import('declarations/UserAccountCanister')._SERVICE>(
+  return createActor<UserAccountService>(
     CANISTER_IDS.USER_ACCOUNT,
     userAccountFactory
   );
 };
 
 export const getClaimSubmissionActor = () => {
-  return createActor<import('declarations/ClaimSubmissionCanister')._SERVICE>(
+  return createActor<ClaimSubmissionService>(
     CANISTER_IDS.CLAIM_SUBMISSION,
     claimSubmissionFactory
   );
 };
 
 export const getFactLedgerActor = () => {
-  return createActor<import('declarations/FactLedgerCanister')._SERVICE>(
+  return createActor<FactLedgerService>(
     CANISTER_IDS.FACT_LEDGER,
     factLedgerFactory
   );
 };
 
 export const getLearningActor = () => {
-  return createActor<import('declarations/GamifiedLearningCanister')._SERVICE>(
+  return createActor<LearningService>(
     CANISTER_IDS.LEARNING,
     learningFactory
   );
