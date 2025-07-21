@@ -8,6 +8,7 @@ import Result "mo:base/Result";
 import Time "mo:base/Time";
 import Text "mo:base/Text";
 import TrieMap "mo:base/TrieMap";
+import Types "../../common/Types";
 
 actor VerificationWorkflowCanister {
     // ======== TYPE DEFINITIONS ========
@@ -49,11 +50,13 @@ actor VerificationWorkflowCanister {
         storeResult : (claimId : ClaimId, verdict : Text, explanation : Text, evidence : [Text]) -> async Bool;
     } = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai"); // Replace with actual FactLedger canister ID
 
-    let aletheianProfile : actor {
+    // --- BREAK CIRCULAR DEPENDENCY: Use interface type for AletheianProfileCanister ---
+    type AletheianProfileInterface = actor {
         getAletheianRank : (AletheianId) -> async Text;
         getAletheianExpertise : (AletheianId) -> async [Text];
         updateReputation : (AletheianId, Int) -> async Bool;
-    } = actor ("rrkah-fqaaa-aaaaa-aaaaq-cai"); // Replace with actual AletheianProfile canister ID
+    };
+    let aletheianProfile = actor ("rrkah-fqaaa-aaaaa-aaaaq-cai") : AletheianProfileInterface; // Replace with actual canister ID
 
     let escalation : actor {
         escalateClaim : (claimId : ClaimId, reason : Text) -> async Bool;
