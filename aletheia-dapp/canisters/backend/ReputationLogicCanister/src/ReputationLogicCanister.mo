@@ -6,6 +6,15 @@ import Int "mo:base/Int";
 import Iter "mo:base/Iter";
 import Option "mo:base/Option";
 import Time "mo:base/Time";
+import Types "../../common/Types";
+
+// --- BREAK CIRCULAR DEPENDENCY: Use interface type for VerificationWorkflowCanister ---
+type VerificationWorkflowInterface = actor {
+    getTask: (claimId: Text) -> async ?Types.Assignment; // Adjust type as needed
+    // Add only the methods you actually call
+};
+// Example usage (replace with actual canister ID):
+// let verificationWorkflow = actor ("<VerificationWorkflowCanister_canister_id>") : VerificationWorkflowInterface;
 
 shared({ caller = initializer }) actor class ReputationLogicCanister() = this {
     // ========== TYPE DEFINITIONS ==========

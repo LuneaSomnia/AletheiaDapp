@@ -8,6 +8,15 @@ import Result "mo:base/Result";
 import Text "mo:base/Text";
 import Float "mo:base/Float";
 import Time "mo:base/Time";
+import Types "../../common/Types";
+
+// --- BREAK CIRCULAR DEPENDENCY: Use interface type for ReputationLogicCanister ---
+type ReputationLogicInterface = actor {
+    getReputation: (principal: Principal) -> async ?Types.VerificationResult; // Adjust type as needed
+    // Add only the methods you actually call
+};
+// Example usage (replace with actual canister ID):
+// let reputationLogic = actor ("<ReputationLogicCanister_canister_id>") : ReputationLogicInterface;
 
 actor AletheianProfileCanister {
     type Rank = {

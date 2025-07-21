@@ -18,4 +18,6 @@ module {
         evidence: [Text];
         comments: ?Text;
     };
+
+    public type VerifierId = Principal;
 };
