@@ -4,6 +4,8 @@
 .dfx/
 node_modules
 node_modules/
+*.pack
+.cache
 *.wasm
 *.wasm.gz
 *.js.map
