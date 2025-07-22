@@ -5,6 +5,8 @@
 
 # Node
 node_modules/
+*.pack
+.cache/
 
 # Build artifacts
 *.wasm
