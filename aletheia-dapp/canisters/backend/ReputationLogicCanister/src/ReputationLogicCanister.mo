@@ -6,7 +6,7 @@ import Int "mo:base/Int";
 import Iter "mo:base/Iter";
 import Option "mo:base/Option";
 import Time "mo:base/Time";
-import Types "../../common/Types";
+import Types "../common/Types";
 
 // --- BREAK CIRCULAR DEPENDENCY: Use interface type for VerificationWorkflowCanister ---
 type VerificationWorkflowInterface = actor {

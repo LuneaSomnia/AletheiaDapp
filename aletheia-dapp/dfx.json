@@ -41,70 +41,54 @@
     },
     "AletheianProfileCanister": {
       "main": "canisters/backend/AletheianProfileCanister/src/AletheianProfileCanister.mo",
-      "type": "motoko",
-      "dependencies": ["ReputationLogicCanister"]
+      "type": "motoko"
     },
     "FactLedgerCanister": {
       "main": "canisters/backend/FactLedgerCanister/src/FactLedgerCanister.mo",
-      "type": "motoko",
-      "dependencies": ["IPFSAdapter"]
+      "type": "motoko"
     },
     "ReputationLogicCanister": {
       "main": "canisters/backend/ReputationLogicCanister/src/ReputationLogicCanister.mo",
-      "type": "motoko",
-      "dependencies": ["VerificationWorkflowCanister", "EscalationCanister"]
+      "type": "motoko"
     },
     "ClaimSubmissionCanister": {
       "main": "canisters/backend/ClaimSubmissionCanister/src/ClaimSubmissionCanister.mo",
-      "type": "motoko",
-      "dependencies": ["AI_IntegrationCanister", "AletheianDispatchCanister"]
+      "type": "motoko"
     },
     "AI_IntegrationCanister": {
       "main": "canisters/backend/AI_IntegrationCanister/src/AI_IntegrationCanister.mo",
-      "type": "motoko",
-      "dependencies": []
+      "type": "motoko"
     },
     "AletheianDispatchCanister": {
       "main": "canisters/backend/AletheianDispatchCanister/src/AletheianDispatchCanister.mo",
-      "type": "motoko",
-      "dependencies": ["AletheianProfileCanister"]
+      "type": "motoko"
     },
     "VerificationWorkflowCanister": {
       "main": "canisters/backend/VerificationWorkflowCanister/src/VerificationWorkflowCanister.mo",
-      "type": "motoko",
-      "dependencies": [
-        "AletheianProfileCanister",
-        "FactLedgerCanister",
-        "AI_Adapter",
-        "EscalationCanister"
-      ]
+      "type": "motoko"
     },
     "EscalationCanister": {
       "main": "canisters/backend/EscalationCanister/src/EscalationCanister.mo",
-      "type": "motoko",
-      "dependencies": ["AletheianProfileCanister", "FactLedgerCanister"]
+      "type": "motoko"
     },
     "FinanceCanister": {
       "main": "canisters/backend/FinanceCanister/src/FinanceCanister.mo",
-      "type": "motoko",
-      "dependencies": ["DIP20Token", "ReputationLogicCanister"]
+      "type": "motoko"
     },
     "GamifiedLearningCanister": {
       "main": "canisters/backend/GamifiedLearningCanister/src/GamifiedLearningCanister.mo",
-      "type": "motoko",
-      "dependencies": ["AI_IntegrationCanister", "UserAccountCanister"]
+      "type": "motoko"
     },
     "NotificationCanister": {
       "main": "canisters/backend/NotificationCanister/src/NotificationCanister.mo",
-      "type": "motoko",
-      "dependencies": []
+      "type": "motoko"
     },
     "DIP20Token": {
       "main": "canisters/backend/DIP20TokenCanister/src/main.mo",
       "type": "motoko"
     },
     "AI_Adapter": {
-      "main": "canisters/backend/AI_Adapter/src/main.mo",
+      "main": "canisters/backend/AI_Adapter/main.mo",
       "type": "motoko"
     },
     "IPFSAdapter": {
