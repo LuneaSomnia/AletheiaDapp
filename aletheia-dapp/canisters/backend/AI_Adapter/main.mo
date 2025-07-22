@@ -9,7 +9,8 @@ import Nat "mo:base/Nat";
 import Nat16 "mo:base/Nat16";
 import Time "mo:base/Time";
 
-// Define the management canister interface for http_request
+actor {
+  // Define the management canister interface for http_request
 let ic : actor {
   http_request : {
     url : Text;
@@ -28,7 +29,6 @@ let ic : actor {
   };
 } = actor ("aaaaa-aa");
 
-actor {
   type ApiKey = {
     value : Text;
     lastUsed : Int;

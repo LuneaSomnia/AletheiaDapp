@@ -8,7 +8,7 @@ import Result "mo:base/Result";
 import Text "mo:base/Text";
 import Float "mo:base/Float";
 import Time "mo:base/Time";
-import Types "../../common/Types";
+import Types "../common/Types";
 
 // --- BREAK CIRCULAR DEPENDENCY: Use interface type for ReputationLogicCanister ---
 type ReputationLogicInterface = actor {

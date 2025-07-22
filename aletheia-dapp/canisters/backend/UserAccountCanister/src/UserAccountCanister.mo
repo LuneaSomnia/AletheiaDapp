@@ -10,7 +10,7 @@ import Random "mo:base/Random";
 import Blob "mo:base/Blob";
 import Nat8 "mo:base/Nat8";
 import Nat "mo:base/Nat";
-import Debug "mo:base/Debug";
+import _ "mo:base/Debug";
 
 actor UserAccountCanister {
     // Types

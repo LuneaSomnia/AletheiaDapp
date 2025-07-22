@@ -8,7 +8,7 @@ import Result "mo:base/Result";
 import Time "mo:base/Time";
 import Text "mo:base/Text";
 import TrieMap "mo:base/TrieMap";
-import Types "../../common/Types";
+import Types "../common/Types";
 
 actor VerificationWorkflowCanister {
     // ======== TYPE DEFINITIONS ========
