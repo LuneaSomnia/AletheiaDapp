@@ -99,6 +99,19 @@ actor class GamifiedLearningCanister() {
         "Misinformation Buster", "Source Detective", "Daily Learner"
     ];
 
+    // Canister references
+    let userAccount = actor ("UserAccountCanister") : actor {
+        recordActivity : (userId : Principal, activity : {
+            claimId : Text;
+            timestamp : Int;
+            activityType : { #claimSubmitted; #factChecked; #learningCompleted };
+        }) -> async ();
+    };
+
+    let notification = actor ("NotificationCanister") : actor {
+        sendNotification : (userId : Principal, title : Text, message : Text, notifType : Text) -> async Nat;
+    };
+
     // Initialize with comprehensive modules
     public func seedModules() : async () {
         modules := [
@@ -432,6 +445,23 @@ actor class GamifiedLearningCanister() {
                 // Update progress
                 let rewardPoints = if (score >= 80.0) { lesson.rewardPoints } else { 0 };
                 updateUserProgress(userId, moduleId, lessonId, score, rewardPoints);
+                
+                // Record learning activity
+                await userAccount.recordActivity(userId, {
+                    claimId = lessonId;
+                    timestamp = Time.now();
+                    activityType = #learningCompleted;
+                });
+                
+                // Send notification for significant achievements
+                if (score >= 90.0) {
+                    ignore await notification.sendNotification(
+                        userId,
+                        "Excellent Performance",
+                        "You scored " # Float.toText(score) # "% on " # lesson.title # "!",
+                        "learning_achievement"
+                    );
+                };
 
                 // Recommend next lesson
                 let nextLesson = recommendNextLesson(userId, moduleId, lessonId);

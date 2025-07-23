@@ -45,7 +45,9 @@ module Ledger {
     };
 };
 
-actor class FinanceCanister(ledgerCanisterId : Principal) = this {
+actor class FinanceCanister() = this {
+    let ledgerCanisterId = Principal.fromText("rrkah-fqaaa-aaaaa-aaaaq-cai"); // ICP Ledger canister ID
+
     type AccountIdentifier = Ledger.AccountIdentifier;
     type ICP = Ledger.ICP;
     type TransferResult = Ledger.TransferResult;
@@ -57,6 +59,28 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
         Option.isSome(Array.find(admins, func (admin : Principal) : Bool { admin == p }))
     };
     
+    // Canister references
+    let aletheianProfile = actor ("AletheianProfileCanister") : actor {
+        getProfile : (aletheian : Principal) -> async ?{
+            id : Principal;
+            rank : { #Trainee; #Junior; #Associate; #Senior; #Expert; #Master };
+            xp : Int;
+            expertiseBadges : [Text];
+            location : ?Text;
+            status : { #Active; #Suspended; #Retired };
+            warnings : Nat;
+            accuracy : Float;
+            claimsVerified : Nat;
+            completedTraining : [Text];
+            createdAt : Int;
+            lastActive : Int;
+        };
+    };
+
+    let notification = actor ("NotificationCanister") : actor {
+        sendNotification : (userId : Principal, title : Text, message : Text, notifType : Text) -> async Nat;
+    };
+
     // Stable state variables
     stable var revenuePool : Nat64 = 0;
     stable var earningsEntries : [(Principal, Nat64)] = [];
@@ -254,6 +278,14 @@ actor class FinanceCanister(ledgerCanisterId : Principal) = this {
                             timestamp = Time.now();
                             blockIndex = ?blockIndex;
                         });
+                        
+                        // Notify user of successful withdrawal
+                        ignore await notification.sendNotification(
+                            caller,
+                            "Withdrawal Successful",
+                            "Your withdrawal of " # Nat64.toText(transferAmount) # " e8s has been processed",
+                            "payment_received"
+                        );
                         
                         #ok(blockIndex);
                     };

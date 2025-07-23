@@ -40,10 +40,31 @@ actor AletheianDispatchCanister {
     let assignments = HashMap.HashMap<Text, [Principal]>(0, Text.equal, Text.hash);
 
     // Canister references
-    let profileCanister : actor {
-        getProfile : (id : Principal) -> async ?AletheianProfile;
-        updateWorkload : (id : Principal, delta : Int) -> async Bool;
-    } = actor ("profiles-cai"); // Replace with actual canister ID
+    let profileCanister = actor ("AletheianProfileCanister") : actor {
+        getProfile : (aletheian : Principal) -> async ?{
+            id : Principal;
+            rank : { #Trainee; #Junior; #Associate; #Senior; #Expert; #Master };
+            xp : Int;
+            expertiseBadges : [Text];
+            location : ?Text;
+            status : { #Active; #Suspended; #Retired };
+            warnings : Nat;
+            accuracy : Float;
+            claimsVerified : Nat;
+            completedTraining : [Text];
+            createdAt : Int;
+            lastActive : Int;
+        };
+        heartbeat : () -> async ();
+    };
+
+    let verificationWorkflow = actor ("VerificationWorkflowCanister") : actor {
+        createTask : (claimId : Text, aletheians : [Principal]) -> async Result.Result<(), Text>;
+    };
+
+    let notification = actor ("NotificationCanister") : actor {
+        sendNotification : (userId : Principal, title : Text, message : Text, notifType : Text) -> async Nat;
+    };
 
     system func preupgrade() {
         profilesEntries := Iter.toArray(profiles.entries());
@@ -97,8 +118,22 @@ actor AletheianDispatchCanister {
 
             // Update assignments and workloads
             assignments.put(claim.id, Buffer.toArray(selected));
+            
+            // Create verification task
+            let taskResult = await verificationWorkflow.createTask(claim.id, Buffer.toArray(selected));
+            switch (taskResult) {
+                case (#err(msg)) { return #err("Failed to create verification task: " # msg) };
+                case (#ok()) {};
+            };
+
+            // Notify assigned Aletheians
             for (aletheianId in selected.vals()) {
-                ignore await profileCanister.updateWorkload(aletheianId, 1);
+                ignore await notification.sendNotification(
+                    aletheianId,
+                    "New Claim Assignment",
+                    "You have been assigned a new claim to verify: " # claim.id,
+                    "new_assignment"
+                );
             };
 
             #ok(Buffer.toArray(selected));
@@ -187,9 +222,6 @@ actor AletheianDispatchCanister {
     public shared func completeAssignment(claimId : Text) : async Bool {
         switch (assignments.get(claimId)) {
             case (?aletheians) {
-                for (id in aletheians.vals()) {
-                    ignore await profileCanister.updateWorkload(id, -1);
-                };
                 assignments.delete(claimId);
                 true
             };

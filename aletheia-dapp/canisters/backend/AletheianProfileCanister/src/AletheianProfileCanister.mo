@@ -10,13 +10,42 @@ import Float "mo:base/Float";
 import Time "mo:base/Time";
 import Types "../common/Types";
 
-// --- BREAK CIRCULAR DEPENDENCY: Use interface type for ReputationLogicCanister ---
-type ReputationLogicInterface = actor {
-    getReputation: (principal: Principal) -> async ?Types.VerificationResult; // Adjust type as needed
-    // Add only the methods you actually call
-};
-// Example usage (replace with actual canister ID):
-// let reputationLogic = actor ("<ReputationLogicCanister_canister_id>") : ReputationLogicInterface;
+    // Canister references
+    let reputationLogic = actor ("ReputationLogicCanister") : actor {
+        updateReputation : (user : Principal, update : {
+            #reward : { 
+                xp : Nat; 
+                credits : Nat;
+                rewardType : {
+                    #baseVerification;
+                    #complexityBonus;
+                    #accuracyBonus;
+                    #speedBonus;
+                    #seniorEscalation;
+                    #councilResolution;
+                    #trainingModule;
+                    #duplicateIdentification;
+                };
+            };
+            #penalty : {
+                #incorrectVerification;
+                #minorBreach;
+                #repeatedMinorBreach;
+                #majorBreach;
+                #taskIncomplete;
+            };
+        }) -> async ();
+        getReputation : (user : Principal) -> async {
+            xp : Nat;
+            credits : Nat;
+            warnings : Nat;
+            lastWarning : ?Int;
+        };
+    };
+
+    let notification = actor ("NotificationCanister") : actor {
+        sendNotification : (userId : Principal, title : Text, message : Text, notifType : Text) -> async Nat;
+    };
 
 actor AletheianProfileCanister {
     type Rank = {
@@ -176,6 +205,14 @@ actor AletheianProfileCanister {
                 profiles.put(applicant, updatedProfile);
                 registrationRequests.delete(applicant);
                 
+                // Send welcome notification
+                ignore await notification.sendNotification(
+                    applicant,
+                    "Welcome to Aletheia",
+                    "Your Aletheian registration has been approved! You can now start verifying claims.",
+                    "registration_approved"
+                );
+                
                 #ok("Aletheian approved and onboarded successfully");
             };
         };
@@ -225,6 +262,18 @@ actor AletheianProfileCanister {
                 // Update accuracy if provided
                 updatedProfile := switch (accuracyImpact) {
                     case (?impact) {
+                        // Update external reputation system
+                        let reputationUpdate = if (xpChange > 0) {
+                            #reward({
+                                xp = Int.abs(xpChange);
+                                credits = Int.abs(xpChange) * 5;
+                                rewardType = #baseVerification;
+                            })
+                        } else {
+                            #penalty(#incorrectVerification)
+                        };
+                        ignore await reputationLogic.updateReputation(aletheian, reputationUpdate);
+                        
                         let newAccuracy = 
                             (profile.accuracy * Float.fromInt(profile.claimsVerified) 
                             + impact) / Float.fromInt(profile.claimsVerified + 1);
@@ -341,6 +390,15 @@ actor AletheianProfileCanister {
                 };
                 
                 profiles.put(aletheian, updatedProfile);
+                
+                // Send badge notification
+                ignore await notification.sendNotification(
+                    aletheian,
+                    "New Badge Earned",
+                    "Congratulations! You've earned the " # badge # " expertise badge.",
+                    "badge_earned"
+                );
+                
                 #ok();
             };
         };

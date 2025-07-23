@@ -43,29 +43,86 @@ actor VerificationWorkflowCanister {
     let tasks = TrieMap.TrieMap<ClaimId, VerificationTask>(Text.equal, Text.hash);
     
     // ======== CANISTER REFERENCES ========
-    let factLedger : actor {
-        findSimilarClaims : (content : Text) -> async [ClaimId];
-        getClaim : (ClaimId) -> async ?{ content : Text };
-        getVerifiedFact : (ClaimId) -> async ?{ verdict : Text; explanation : Text; evidence : [Text] };
-        storeResult : (claimId : ClaimId, verdict : Text, explanation : Text, evidence : [Text]) -> async Bool;
-    } = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai"); // Replace with actual FactLedger canister ID
-
-    // --- BREAK CIRCULAR DEPENDENCY: Use interface type for AletheianProfileCanister ---
-    type AletheianProfileInterface = actor {
-        getAletheianRank : (AletheianId) -> async Text;
-        getAletheianExpertise : (AletheianId) -> async [Text];
-        updateReputation : (AletheianId, Int) -> async Bool;
+    let factLedger = actor ("FactLedgerCanister") : actor {
+        getFact : (id : Nat) -> async ?{
+            id : Nat;
+            content : Text;
+            status : { #PendingReview; #Verified; #Disputed; #Deprecated };
+            claimClassification : ?{ #True; #False; #MisleadingContext; #Unsubstantiated };
+            evidence : [{ hash : Text; storageType : Text; url : ?Text; timestamp : Int; provider : Principal }];
+            verdicts : [{ classification : { #True; #False; #MisleadingContext; #Unsubstantiated }; timestamp : Int; verifier : Principal; explanation : Text }];
+            version : { version : Nat; previousVersion : ?Nat; timestamp : Int };
+            publicProof : { proofType : Text; content : Text };
+            created : Int;
+            lastUpdated : Int;
+        };
+        addFact : (request : {
+            content : Text;
+            evidence : [{ hash : Text; storageType : Text; url : ?Text; timestamp : Int; provider : Principal }];
+            publicProof : { proofType : Text; content : Text };
+        }) -> async Result.Result<{
+            id : Nat;
+            content : Text;
+            status : { #PendingReview; #Verified; #Disputed; #Deprecated };
+            claimClassification : ?{ #True; #False; #MisleadingContext; #Unsubstantiated };
+            evidence : [{ hash : Text; storageType : Text; url : ?Text; timestamp : Int; provider : Principal }];
+            verdicts : [{ classification : { #True; #False; #MisleadingContext; #Unsubstantiated }; timestamp : Int; verifier : Principal; explanation : Text }];
+            version : { version : Nat; previousVersion : ?Nat; timestamp : Int };
+            publicProof : { proofType : Text; content : Text };
+            created : Int;
+            lastUpdated : Int;
+        }, Text>;
     };
-    let aletheianProfile = actor ("rrkah-fqaaa-aaaaa-aaaaq-cai") : AletheianProfileInterface; // Replace with actual canister ID
 
-    let escalation : actor {
-        escalateClaim : (claimId : ClaimId, reason : Text) -> async Bool;
-    } = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai"); // Replace with actual Escalation canister ID
+    let aletheianProfile = actor ("AletheianProfileCanister") : actor {
+        getProfile : (aletheian : Principal) -> async ?{
+            id : Principal;
+            rank : { #Trainee; #Junior; #Associate; #Senior; #Expert; #Master };
+            xp : Int;
+            expertiseBadges : [Text];
+            location : ?Text;
+            status : { #Active; #Suspended; #Retired };
+            warnings : Nat;
+            accuracy : Float;
+            claimsVerified : Nat;
+            completedTraining : [Text];
+            createdAt : Int;
+            lastActive : Int;
+        };
+        updateAletheianXp : (aletheian : Principal, xpChange : Int, accuracyImpact : ?Float) -> async Result.Result<(), Text>;
+    };
 
-    let aiIntegration : actor {
-        generateQuestions : (claim : Text) -> async [Text];
-        researchClaim : (claim : Text) -> async [Text];
-    } = actor ("r7inp-6aaaa-aaaaa-aaabq-cai"); // Replace with actual AI canister ID
+    let escalation = actor ("EscalationCanister") : actor {
+        escalateClaim : (claimId : Text, initialFindings : [(Principal, {
+            verdict : Text;
+            explanation : Text;
+            evidence : [Text];
+            timestamp : Int;
+        })]) -> async Result.Result<(), Text>;
+    };
+
+    let aiIntegration = actor ("AI_IntegrationCanister") : actor {
+        synthesizeReport : (claim : {
+            id : Text;
+            content : Text;
+            claimType : Text;
+            source : ?Text;
+            context : ?Text;
+        }, findings : [{
+            aletheianId : Principal;
+            classification : Text;
+            explanation : Text;
+            evidence : [Text];
+        }]) -> async Result.Result<{
+            verdict : Text;
+            explanation : Text;
+            evidence : [Text];
+        }, Text>;
+    };
+
+    let notification = actor ("NotificationCanister") : actor {
+        sendNotification : (userId : Principal, title : Text, message : Text, notifType : Text) -> async Nat;
+    };
 
     // ======== INITIALIZATION ========
     system func preupgrade() {
@@ -173,14 +230,17 @@ actor VerificationWorkflowCanister {
                             case (#ok(verdict, explanation, evidence)) {
                                 let _ = await finalizeTask(claimId, verdict, explanation, evidence, false);
                             };
-                            case (#err(reason)) {
+                        await finalizeTask(claimId, verdict, explanation, evidence, false);
                                 // Consensus not reached, escalate
                                 let escalated = await escalation.escalateClaim(claimId, reason);
                                 if (escalated) {
-                                    let updatedTask = { task with status = #disputed };
-                                    tasks.put(claimId, updatedTask);
+                        let escalationResult = await escalation.escalateClaim(claimId, task.findings);
+                        switch (escalationResult) {
+                          case (#ok()) {
                                 };
                             };
+                          };
+                          case (#err(_)) {};
                         };
                     };
                 };
@@ -293,15 +353,46 @@ actor VerificationWorkflowCanister {
             case (?task) {
                 // Only store new facts for non-duplicates
                 if (not isDuplicate) {
-                    let stored = await factLedger.storeResult(claimId, verdict, explanation, evidence);
-                    if (not stored) {
-                        return false;
+                    let factRequest = {
+                        content = claimId; // In production, get actual claim content
+                        evidence = Array.map<Text, { hash : Text; storageType : Text; url : ?Text; timestamp : Int; provider : Principal }>(
+                            evidence, 
+                            func(ev) {
+                                {
+                                    hash = ev;
+                                    storageType = "HTTPS";
+                                    url = ?ev;
+                                    timestamp = Time.now();
+                                    provider = Principal.fromText("aaaaa-aa");
+                                }
+                            }
+                        );
+                        publicProof = { proofType = "ALETHEIA_CONSENSUS"; content = verdict };
+                    };
+                    let storeResult = await factLedger.addFact(factRequest);
+                    switch (storeResult) {
+                        case (#err(_)) { return false };
+                        case (#ok(_)) {};
                     };
                 };
                 
                 // Update Aletheian reputations
                 for (aletheian in task.assignedAletheians.vals()) {
-                    ignore await aletheianProfile.updateReputation(aletheian, 10); // Base XP
+                    ignore await aletheianProfile.updateAletheianXp(aletheian, 10, null); // Base XP
+                };
+
+                // Notify user of completion
+                switch (tasks.get(claimId)) {
+                    case (?t) {
+                        // Get submitter from claim data - simplified for now
+                        ignore await notification.sendNotification(
+                            Principal.fromText("aaaaa-aa"), // Replace with actual submitter
+                            "Claim Verified",
+                            "Your claim has been verified: " # verdict,
+                            "claim_verified"
+                        );
+                    };
+                    case null {};
                 };
                 
                 // Update task status

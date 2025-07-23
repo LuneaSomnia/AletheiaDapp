@@ -62,9 +62,20 @@ actor AI_IntegrationCanister {
     };
 
     // Canister references
-    let factLedgerCanister : actor {
-        searchSimilarClaims : (content : Text) -> async [Text];
-    } = actor ("fctaa-aaaaa-aaaab-qai7q-cai"); // Replace with actual FactLedger ID
+    let factLedgerCanister = actor ("FactLedgerCanister") : actor {
+        getAllFacts : () -> async [{
+            id : Nat;
+            content : Text;
+            status : { #PendingReview; #Verified; #Disputed; #Deprecated };
+            claimClassification : ?{ #True; #False; #MisleadingContext; #Unsubstantiated };
+            evidence : [{ hash : Text; storageType : Text; url : ?Text; timestamp : Int; provider : Principal }];
+            verdicts : [{ classification : { #True; #False; #MisleadingContext; #Unsubstantiated }; timestamp : Int; verifier : Principal; explanation : Text }];
+            version : { version : Nat; previousVersion : ?Nat; timestamp : Int };
+            publicProof : { proofType : Text; content : Text };
+            created : Int;
+            lastUpdated : Int;
+        }];
+    };
 
     // Stable storage for AI configurations
     stable var questionModelVersion : Text = "gpt-4-turbo";
@@ -126,7 +137,25 @@ actor AI_IntegrationCanister {
     // AI Module 3: Blockchain Duplicate Detection
     public shared func findDuplicates(claim : Claim) : async Result.Result<[Text], Text> {
         try {
-            let similarClaims = await factLedgerCanister.searchSimilarClaims(claim.content);
+            let allFacts = await factLedgerCanister.getAllFacts();
+            let similarClaims = Array.mapFilter<{
+                id : Nat;
+                content : Text;
+                status : { #PendingReview; #Verified; #Disputed; #Deprecated };
+                claimClassification : ?{ #True; #False; #MisleadingContext; #Unsubstantiated };
+                evidence : [{ hash : Text; storageType : Text; url : ?Text; timestamp : Int; provider : Principal }];
+                verdicts : [{ classification : { #True; #False; #MisleadingContext; #Unsubstantiated }; timestamp : Int; verifier : Principal; explanation : Text }];
+                version : { version : Nat; previousVersion : ?Nat; timestamp : Int };
+                publicProof : { proofType : Text; content : Text };
+                created : Int;
+                lastUpdated : Int;
+            }, Text>(allFacts, func(fact) {
+                if (Text.contains(fact.content, #text claim.content) or Text.contains(claim.content, #text fact.content)) {
+                    ?Nat.toText(fact.id)
+                } else {
+                    null
+                }
+            });
             #ok(similarClaims);
         } catch (e) {
             #err("Duplicate detection failed: " # Error.message(e));
