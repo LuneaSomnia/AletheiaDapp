@@ -1,0 +1,9 @@
+service : {
+  submit_claim: (text, opt text, opt text, vec text) -> (text);
+  verify_claim: (text) -> ();
+  get_claim_status: (text) -> (opt record {
+    status: text;
+    verdict: opt text;
+    explanation: opt text;
+  }) query;
+}
