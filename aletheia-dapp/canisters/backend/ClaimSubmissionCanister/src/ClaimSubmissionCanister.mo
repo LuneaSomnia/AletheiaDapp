@@ -59,21 +59,42 @@ actor ClaimSubmissionCanister {
     let VALID_URL_PREFIXES = ["http://", "https://"];
 
     // Canister references
-    let aiCanister : actor {
-        generateQuestions : (claimId : Text) -> async Text;
-    } = actor ("aiaaa-aaaaa-aaaab-qai4q-cai");
+    let aiCanister = actor ("AI_IntegrationCanister") : actor {
+        generateQuestions : (claim : {
+            id : Text;
+            content : Text;
+            claimType : Text;
+            source : ?Text;
+            context : ?Text;
+        }) -> async Result.Result<{
+            claimId : Text;
+            questions : [Text];
+            explanations : [Text];
+        }, Text>;
+    };
 
-    let dispatchCanister : actor {
-        assignClaim : (claimId : Text) -> async Bool;
-    } = actor ("dtcaa-aaaaa-aaaab-qai5q-cai");
+    let dispatchCanister = actor ("AletheianDispatchCanister") : actor {
+        assignClaim : (claim : {
+            id : Text;
+            content : Text;
+            claimType : Text;
+            tags : [Text];
+            locationHint : ?Text;
+            timestamp : Int;
+        }) -> async Result.Result<[Principal], Text>;
+    };
 
-    let notificationCanister : actor {
-        notifyUser : (userId : Principal, message : Text) -> async Bool;
-    } = actor ("ntfaa-aaaaa-aaaab-qai6q-cai");
+    let notificationCanister = actor ("NotificationCanister") : actor {
+        sendNotification : (userId : Principal, title : Text, message : Text, notifType : Text) -> async Nat;
+    };
 
-    let storageCanister : actor {
-        storeBlob : (hash : Text, blob : Blob) -> async Bool;
-    } = actor ("stgaa-aaaaa-aaaab-qaiaa-cai");
+    let userAccountCanister = actor ("UserAccountCanister") : actor {
+        recordActivity : (userId : Principal, activity : {
+            claimId : Text;
+            timestamp : Int;
+            activityType : { #claimSubmitted; #factChecked; #learningCompleted };
+        }) -> async ();
+    };
 
     system func preupgrade() {
         claimsEntries := Iter.toArray(claims.entries());
@@ -163,14 +184,45 @@ actor ClaimSubmissionCanister {
             };
 
             // Initiate AI question generation
-            ignore await aiCanister.generateQuestions(claimId);
-            ignore await notificationCanister.notifyUser(caller, "Claim received. Processing...");
+            let claimForAI = {
+                id = claimId;
+                content = switch (validatedContent) {
+                    case (#text(t)) { t };
+                    case (#url(u)) { u };
+                    case (#blob(_)) { "Media file uploaded" };
+                };
+                claimType = submission.claimType;
+                source = submission.source;
+                context = submission.context;
+            };
+            ignore await aiCanister.generateQuestions(claimForAI);
+            ignore await notificationCanister.sendNotification(caller, "Claim Received", "Claim received. Processing...", "claim_update");
 
             // Dispatch to Aletheians
-            let dispatchSuccess = await dispatchCanister.assignClaim(claimId);
-            if (not dispatchSuccess) {
-                throw Error.reject("Failed to dispatch claim to Aletheians");
+            let claimForDispatch = {
+                id = claimId;
+                content = switch (validatedContent) {
+                    case (#text(t)) { t };
+                    case (#url(u)) { u };
+                    case (#blob(_)) { "Media file" };
+                };
+                claimType = submission.claimType;
+                tags = [];
+                locationHint = null;
+                timestamp = Time.now();
             };
+            let dispatchResult = await dispatchCanister.assignClaim(claimForDispatch);
+            switch (dispatchResult) {
+                case (#err(msg)) { throw Error.reject("Failed to dispatch claim: " # msg) };
+                case (#ok(_)) {};
+            };
+
+            // Record activity
+            await userAccountCanister.recordActivity(caller, {
+                claimId = claimId;
+                timestamp = Time.now();
+                activityType = #claimSubmitted;
+            });
 
             // Update status
             let updatedClaim = {

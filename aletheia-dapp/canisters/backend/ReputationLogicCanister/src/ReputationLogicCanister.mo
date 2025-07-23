@@ -8,13 +8,14 @@ import Option "mo:base/Option";
 import Time "mo:base/Time";
 import Types "../common/Types";
 
-// --- BREAK CIRCULAR DEPENDENCY: Use interface type for VerificationWorkflowCanister ---
-type VerificationWorkflowInterface = actor {
-    getTask: (claimId: Text) -> async ?Types.Assignment; // Adjust type as needed
-    // Add only the methods you actually call
-};
-// Example usage (replace with actual canister ID):
-// let verificationWorkflow = actor ("<VerificationWorkflowCanister_canister_id>") : VerificationWorkflowInterface;
+    // Canister references
+    let financeCanister = actor ("FinanceCanister") : actor {
+        updateXP : (user : Principal, xp : Nat) -> async ();
+    };
+
+    let notification = actor ("NotificationCanister") : actor {
+        sendNotification : (userId : Principal, title : Text, message : Text, notifType : Text) -> async Nat;
+    };
 
 shared({ caller = initializer }) actor class ReputationLogicCanister() = this {
     // ========== TYPE DEFINITIONS ==========
@@ -146,6 +147,45 @@ shared({ caller = initializer }) actor class ReputationLogicCanister() = this {
         };
         
         userReputations.put(user, updatedReputation);
+        
+        // Update finance canister with XP changes for payment calculations
+        switch(update) {
+            case (#reward reward) {
+                await financeCanister.updateXP(user, reward.xp);
+            };
+            case (#penalty _) {
+                // XP penalties are handled in the reputation calculation
+            };
+        };
+        
+        // Send notification for significant reputation changes
+        switch(update) {
+            case (#reward reward) {
+                if (reward.xp >= 25) { // Significant reward
+                    ignore await notification.sendNotification(
+                        user,
+                        "Reputation Reward",
+                        "You earned " # Nat.toText(reward.xp) # " XP for excellent work!",
+                        "reputation_update"
+                    );
+                };
+            };
+            case (#penalty penaltyType) {
+                let message = switch(penaltyType) {
+                    case (#incorrectVerification) { "Your verification was incorrect. Please review the feedback." };
+                    case (#minorBreach) { "Minor guideline breach detected." };
+                    case (#repeatedMinorBreach) { "Repeated minor breaches - please review guidelines." };
+                    case (#majorBreach) { "Major breach detected. Your account may be suspended." };
+                    case (#taskIncomplete) { "Task not completed on time." };
+                };
+                ignore await notification.sendNotification(
+                    user,
+                    "Reputation Update",
+                    message,
+                    "reputation_penalty"
+                );
+            };
+        };
     };
 
     /// Gets current reputation for a user

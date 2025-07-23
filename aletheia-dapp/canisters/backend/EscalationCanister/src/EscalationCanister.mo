@@ -37,25 +37,80 @@ actor EscalationCanister {
     let claims = HashMap.HashMap<ClaimId, EscalatedClaim>(10, Text.equal, Text.hash);
 
     // Canister references
-    let aletheianProfile : actor {
-        getSeniorAletheians : () -> async [Principal];
-        getCouncilOfElders : () -> async [Principal];
-        getAletheianRank : (Principal) -> async Text;
-    } = actor ("apaaa-aaaaa-aaaab-qai2q-cai"); // Replace with actual ID
+    let aletheianProfile = actor ("AletheianProfileCanister") : actor {
+        getAletheiansByRank : (minRank : { #Trainee; #Junior; #Associate; #Senior; #Expert; #Master }) -> async [{
+            id : Principal;
+            rank : { #Trainee; #Junior; #Associate; #Senior; #Expert; #Master };
+            xp : Int;
+            expertiseBadges : [Text];
+            location : ?Text;
+            status : { #Active; #Suspended; #Retired };
+            warnings : Nat;
+            accuracy : Float;
+            claimsVerified : Nat;
+            completedTraining : [Text];
+            createdAt : Int;
+            lastActive : Int;
+        }];
+        getProfile : (aletheian : Principal) -> async ?{
+            id : Principal;
+            rank : { #Trainee; #Junior; #Associate; #Senior; #Expert; #Master };
+            xp : Int;
+            expertiseBadges : [Text];
+            location : ?Text;
+            status : { #Active; #Suspended; #Retired };
+            warnings : Nat;
+            accuracy : Float;
+            claimsVerified : Nat;
+            completedTraining : [Text];
+            createdAt : Int;
+            lastActive : Int;
+        };
+        updateAletheianXp : (aletheian : Principal, xpChange : Int, accuracyImpact : ?Float) -> async Result.Result<(), Text>;
+        issueWarning : (aletheian : Principal, severity : { #Minor; #Major }) -> async Result.Result<(), Text>;
+    };
 
-    let factLedger : actor {
-        storeResult : (claimId : ClaimId, verdict : Verdict) -> async Bool;
-        updateFact : (claimId : ClaimId, newVerdict : Verdict) -> async Bool;
-    } = actor ("fctaa-aaaaa-aaaab-qai7q-cai"); // Replace with actual ID
+    let factLedger = actor ("FactLedgerCanister") : actor {
+        addFact : (request : {
+            content : Text;
+            evidence : [{ hash : Text; storageType : Text; url : ?Text; timestamp : Int; provider : Principal }];
+            publicProof : { proofType : Text; content : Text };
+        }) -> async Result.Result<{
+            id : Nat;
+            content : Text;
+            status : { #PendingReview; #Verified; #Disputed; #Deprecated };
+            claimClassification : ?{ #True; #False; #MisleadingContext; #Unsubstantiated };
+            evidence : [{ hash : Text; storageType : Text; url : ?Text; timestamp : Int; provider : Principal }];
+            verdicts : [{ classification : { #True; #False; #MisleadingContext; #Unsubstantiated }; timestamp : Int; verifier : Principal; explanation : Text }];
+            version : { version : Nat; previousVersion : ?Nat; timestamp : Int };
+            publicProof : { proofType : Text; content : Text };
+            created : Int;
+            lastUpdated : Int;
+        }, Text>;
+    };
 
-    let reputation : actor {
-        updateReputation : (aletheianId : Principal, xpChange : Int) -> async Bool;
-        issueWarning : (aletheianId : Principal) -> async Bool;
-    } = actor ("repaa-aaaaa-aaaab-qai8q-cai"); // Replace with actual ID
+    let notification = actor ("NotificationCanister") : actor {
+        sendNotification : (userId : Principal, title : Text, message : Text, notifType : Text) -> async Nat;
+    };
 
-    let notification : actor {
-        notifyAletheian : (aletheianId : Principal, message : Text) -> async Bool;
-    } = actor ("ntfaa-aaaaa-aaaab-qai6q-cai"); // Replace with actual ID
+    let aiIntegration = actor ("AI_IntegrationCanister") : actor {
+        synthesizeReport : (claim : {
+            id : Text;
+            content : Text;
+            claimType : Text;
+            source : ?Text;
+            context : ?Text;
+        }, findings : [{
+            aletheianId : Principal;
+            classification : Text;
+            explanation : Text;
+            evidence : [Text];
+        }]) -> async Result.Result<{
+            verdict : Text;
+            explanation : Text;
+            evidence : [Text];
+        }, Text>;
+    };
 
     system func preupgrade() {
         escalatedClaims := Iter.toArray(claims.entries());
@@ -193,23 +248,26 @@ actor EscalationCanister {
 
     // Assign claim to senior reviewers
     func assignToSeniorReviewers(claimId : ClaimId) : async () {
-        let seniors = await aletheianProfile.getSeniorAletheians();
+        let seniors = await aletheianProfile.getAletheiansByRank(#Senior);
         if (seniors.size() < 3) {
             // Fallback to council if not enough seniors
             await assignToCouncil(claimId);
             return;
         };
 
-        // Select 3 random seniors (in production, use expertise matching)
-        let selected = Array.tabulate<Principal>(3, func i {
-            seniors[Int.abs(Time.now()) % seniors.size()] 
+        // Select 3 active seniors
+        let activeSeniors = Array.filter(seniors, func(s) { s.status == #Active });
+        let selected = Array.tabulate<Principal>(Int.min(3, activeSeniors.size()), func i {
+            activeSeniors[i].id
         });
 
         // Notify selected seniors
         for (senior in selected.vals()) {
-            ignore await notification.notifyAletheian(
-                senior, 
-                "New escalated claim assigned: " # claimId
+            ignore await notification.sendNotification(
+                senior,
+                "Escalation Review",
+                "New escalated claim assigned: " # claimId,
+                "escalation_assignment"
             );
         };
     };
@@ -245,11 +303,13 @@ actor EscalationCanister {
                 claims.put(claimId, updatedClaim);
 
                 // Notify council members
-                let council = await aletheianProfile.getCouncilOfElders();
+                let council = await aletheianProfile.getAletheiansByRank(#Master);
                 for (member in council.vals()) {
-                    ignore await notification.notifyAletheian(
-                        member, 
-                        "Council review required for claim: " # claimId
+                    ignore await notification.sendNotification(
+                        member.id,
+                        "Council Review",
+                        "Council review required for claim: " # claimId,
+                        "council_review"
                     );
                 };
             };
@@ -279,8 +339,13 @@ actor EscalationCanister {
 
     // Finalize claim with verdict
     func finalizeClaim(claimId : ClaimId, verdict : Verdict) : async () {
-        // Store in fact ledger
-        ignore await factLedger.storeResult(claimId, verdict);
+        // Store in fact ledger with proper structure
+        let factRequest = {
+            content = claimId; // In production, get actual claim content
+            evidence = [];
+            publicProof = { proofType = "ESCALATION_RESOLUTION"; content = verdict };
+        };
+        ignore await factLedger.addFact(factRequest);
         
         // Update claim status
         switch (claims.get(claimId)) {
@@ -309,15 +374,16 @@ actor EscalationCanister {
             let correct = finding.verdict == finalVerdict;
             let xpChange = if correct { 5 } else { -20 };
             
-            // Update XP
-            ignore await reputation.updateReputation(id, xpChange);
+            // Update XP and issue warning if incorrect
+            ignore await aletheianProfile.updateAletheianXp(id, xpChange, null);
             
-            // Issue warning if incorrect
             if (not correct) {
-                ignore await reputation.issueWarning(id);
-                ignore await notification.notifyAletheian(
+                ignore await aletheianProfile.issueWarning(id, #Minor);
+                ignore await notification.sendNotification(
                     id, 
-                    "Your finding for claim " # claimId # " was incorrect. Correct verdict: " # finalVerdict
+                    "Verification Feedback",
+                    "Your finding for claim " # claimId # " was incorrect. Correct verdict: " # finalVerdict,
+                    "feedback"
                 );
             };
         };
@@ -336,7 +402,7 @@ actor EscalationCanister {
             let correct = finding.verdict == finalVerdict;
             let xpChange = if correct { 15 } else { 0 }; // Only reward correct assessments
             
-            ignore await reputation.updateReputation(id, xpChange);
+            ignore await aletheianProfile.updateAletheianXp(id, xpChange, null);
         };
     };
 
@@ -348,7 +414,7 @@ actor EscalationCanister {
     ) : async () {
         for ((id, finding) in findings.vals()) {
             // Always award 25 XP for council participation
-            ignore await reputation.updateReputation(id, 25);
+            ignore await aletheianProfile.updateAletheianXp(id, 25, null);
         };
     };
 

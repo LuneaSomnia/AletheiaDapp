@@ -47,6 +47,11 @@ actor UserAccountCanister {
     var anonymousIdToUser = HashMap.HashMap<AnonymousId, UserId>(0, Text.equal, Text.hash);
     var userActivities = HashMap.HashMap<UserId, [ActivityRecord]>(0, Principal.equal, Principal.hash);
 
+    // Canister references
+    let notification = actor ("NotificationCanister") : actor {
+        sendNotification : (userId : Principal, title : Text, message : Text, notifType : Text) -> async Nat;
+    };
+
     // Initialize from stable storage
     system func preupgrade() {
         userProfilesEntries := Iter.toArray(userProfiles.entries());
@@ -125,6 +130,14 @@ actor UserAccountCanister {
                 userProfiles.put(caller, newProfile);
                 anonymousIdToUser.put(anonymousId, caller);
                 userActivities.put(caller, []);
+                
+                // Send welcome notification
+                ignore await notification.sendNotification(
+                    caller,
+                    "Welcome to Aletheia",
+                    "Your account has been created successfully. Start by submitting your first claim!",
+                    "welcome"
+                );
 
                 #ok(newProfile);
             };

@@ -1,37 +1,16 @@
-// TODO: Provide correct canister aliases or ensure dfx deploy/dfx.json dependencies are set
-// import UserAccount "canister:UserAccountCanister";
-// import ClaimSubmission "canister:ClaimSubmissionCanister";
-// import AletheianDispatch "canister:AletheianDispatchCanister";
-// import VerificationWorkflow "canister:VerificationWorkflowCanister";
-// import FactLedger "canister:FactLedgerCanister";
-// import Notification "canister:NotificationCanister";
+import UserAccount "canister:UserAccountCanister";
+import ClaimSubmission "canister:ClaimSubmissionCanister";
+import AletheianDispatch "canister:AletheianDispatchCanister";
+import VerificationWorkflow "canister:VerificationWorkflowCanister";
+import FactLedger "canister:FactLedgerCanister";
+import Notification "canister:NotificationCanister";
+import AI_Integration "canister:AI_IntegrationCanister";
 
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
+import Result "mo:base/Result";
 
 actor Main {
-  // Placeholders for canisters (stubs for compilation)
-  private let UserAccount = {
-    get_user = func(p : Principal) : async Principal { p };
-    record_claim_submission = func(p : Principal, c : Text) : async () { () };
-  };
-  private let ClaimSubmission = {
-    submit_claim = func(a : Text, b : ?Text, c : ?Text, d : [Text]) : async Text { "" };
-    get_claim = func(id : Text) : async { content : Text; submitter : Principal } { { content = ""; submitter = Principal.fromText("aaaaa-aa") } };
-    process_claim = func(id : Text) : async () { () };
-  };
-  private let AletheianDispatch = {
-    assign_claim = func(id : Text) : async () { () };
-  };
-  private let VerificationWorkflow = {
-    verify_claim = func(id : Text) : async { verdict : Text; explanation : Text; evidence : [Text] } { { verdict = ""; explanation = ""; evidence = [] } };
-  };
-  private let FactLedger = {
-    store_fact = func(a : Text, b : Text, c : Text, d : Text, e : [Text]) : async () { () };
-  };
-  private let Notification = {
-    send_notification = func(a : Principal, b : Text, c : Text) : async () { () };
-  };
 
   public shared ({ caller }) func submit_claim(
     claimType : Text,
@@ -39,31 +18,70 @@ actor Main {
     context : ?Text,
     tags : [Text]
   ) : async Text {
-    // Verify user identity
-    let user = await UserAccount.get_user(caller);
+    // Register user if not exists
+    let _ = await UserAccount.register();
+    
+    // Create claim submission
+    let submission = {
+      content = #text(claimType);
+      claimType = "text";
+      context = context;
+      source = source;
+    };
     
     // Submit claim
-    let claimId = await ClaimSubmission.submit_claim(claimType, source, context, tags);
+    let claimResult = await ClaimSubmission.submitClaim(submission);
+    let claimId = switch (claimResult) {
+      case (#ok(id)) { id };
+      case (#err(msg)) { throw Error.reject("Claim submission failed: " # msg) };
+    };
     
-    // Record submission in user profile
-    await UserAccount.record_claim_submission(caller, claimId);
+    // Generate AI questions
+    let claim = {
+      id = claimId;
+      content = claimType;
+      claimType = "text";
+      source = source;
+      context = context;
+    };
+    let _ = await AI_Integration.generateQuestions(claim);
     
-    // Assign to Aletheians
-    await AletheianDispatch.assign_claim(claimId);
+    // Create verification task
+    let aletheians = []; // Will be populated by dispatch
+    let _ = await VerificationWorkflow.createTask(claimId, aletheians);
     
-    // Notify user
-    await Notification.send_notification(
+    // Send notification
+    let _ = await Notification.sendNotification(
       caller,
-      "claim_submitted",
+      "Claim Submitted",
       "Your claim has been submitted and is being verified"
     );
     
     claimId
   };
 
+  public query func get_claim_status(claimId : Text) : async ?{ status : Text; verdict : ?Text; explanation : ?Text } {
+    switch (await VerificationWorkflow.getTask(claimId)) {
+      case (?task) {
+        let status = switch (task.status) {
+          case (#assigned) { "assigned" };
+          case (#inProgress) { "in_progress" };
+          case (#consensusReached(verdict)) { "completed" };
+          case (#disputed) { "disputed" };
+          case (#completed) { "completed" };
+        };
+        ?{ status = status; verdict = null; explanation = null }
+      };
+      case null { null };
+    };
+  };
+
   public shared func verify_claim(claimId : Text) : async () {
-    // Get claim data
-    let claim = await ClaimSubmission.get_claim(claimId);
+    // This will be called by the verification workflow when consensus is reached
+    // Implementation handled by VerificationWorkflowCanister
+  };
+}
+
     
     // Verify claim
     let results = await VerificationWorkflow.verify_claim(claimId);
