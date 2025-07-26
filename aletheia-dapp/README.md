@@ -8,20 +8,20 @@ Aletheia is built upon three core elements: **Artificial Intelligence (AI)**, **
 
 ## Table of Contents
 
-  - [Enhanced Conceptual Design](https://www.google.com/search?q=%23enhanced-conceptual-design)
-      - [User Flow (Claim Submission & Learning)](https://www.google.com/search?q=%23user-flow-claim-submission--learning)
-      - [Aletheian Flow (Fact-Checking Process)](https://www.google.com/search?q=%23aletheian-flow-fact-checking-process)
-      - [System Flow (Integrating User, Aletheian, AI & Blockchain)](https://www.google.com/search?q=%23system-flow-integrating-user-aletheian-ai--blockchain)
-  - [Design Considerations (Frontend & Backend)](https://www.google.com/search?q=%23design-considerations-frontend--backend)
-      - [User Frontend](https://www.google.com/search?q=%23i-user-frontend)
-      - [Aletheian Frontend](https://www.google.com/search?q=%23ii-aletheian-frontend)
-      - [Backend (ICP Canisters)](https://www.google.com/search?q=%23iii-backend-icp-canisters---smart-contracts)
-  - [Aletheia Canister Ecosystem & Development Order](https://www.google.com/search?q=%23aletheia-canister-ecosystem--development-order)
-      - [Canister List & Functions](https://www.google.com/search?q=%23canister-list--functions)
-  - [Detailed Designs of Aletheia](https://www.google.com/search?q=%23detailed-designs-of-aletheia)
-      - [Granular List of Claim Classifications](https://www.google.com/search?q=%231-granular-list-of-claim-classifications)
-      - [Aletheian Reward, Ranking, and Penalty System](https://www.google.com/search?q=%232-aletheian-reward-ranking-and-penalty-system)
-  - [Addressing Potential Gaps & Implementing Solutions](https://www.google.com/search?q=%23addressing-potential-gaps--implementing-solutions)
+  - [Enhanced Conceptual Design]
+      - [User Flow (Claim Submission & Learning)]
+      - [Aletheian Flow (Fact-Checking Process)]
+      - [System Flow (Integrating User, Aletheian, AI & Blockchain)]
+  - [Design Considerations (Frontend & Backend)]
+      - [User Frontend]
+      - [Aletheian Frontend]
+      - [Backend (ICP Canisters)]
+  - [Aletheia Canister Ecosystem & Development Order]
+      - [Canister List & Functions]
+  - [Detailed Designs of Aletheia]
+      - [Granular List of Claim Classifications]
+      - [Aletheian Reward, Ranking, and Penalty System]
+  - [Addressing Potential Gaps & Implementing Solutions]
 
 -----
 
