@@ -2,27 +2,31 @@
 import React, { useEffect, useState } from 'react';
 import FinanceDashboard from '../components/FinanceDashboard';
 import { useAuth } from '../services/auth';
-import { getAletheianEarnings } from '../services/finance';
+import { getAletheianEarnings, withdrawEarnings, getPaymentGoal, setPaymentGoal } from '../services/finance';
 import GlassCard from '../components/GlassCard';
 
 const FinancePage: React.FC = () => {
   const { user } = useAuth();
   const [earnings, setEarnings] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
-  // Payment goal state
-  const [paymentGoal, setPaymentGoal] = useState<number>(2000);
-  const [goalInput, setGoalInput] = useState<string>('2000');
-  // Withdrawal state
+  const [paymentGoal, setPaymentGoalState] = useState<number>(50);
+  const [goalInput, setGoalInput] = useState<string>('50');
   const [withdrawAmount, setWithdrawAmount] = useState<string>('');
   const [withdrawMsg, setWithdrawMsg] = useState<string>('');
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
 
   useEffect(() => {
-    const fetchEarnings = async () => {
+    const fetchFinanceData = async () => {
       if (user) {
         setIsLoading(true);
         try {
-          const data = await getAletheianEarnings(user.principal);
+          const [data, goalData] = await Promise.all([
+            getAletheianEarnings(user.principal),
+            getPaymentGoal()
+          ]);
           setEarnings(data);
+          setPaymentGoalState(goalData.goalICP);
+          setGoalInput(goalData.goalICP.toString());
         } catch (error) {
           console.error('Failed to fetch earnings:', error);
         } finally {
@@ -31,7 +35,7 @@ const FinancePage: React.FC = () => {
       }
     };
 
-    fetchEarnings();
+    fetchFinanceData();
   }, [user]);
 
   if (!user) return null;
@@ -46,7 +50,58 @@ const FinancePage: React.FC = () => {
   const available = earnings?.available ?? 800;
   const total = earnings?.total ?? 1250;
   const pending = earnings?.pending ?? 450;
-  const progress = Math.min(100, Math.round((total / paymentGoal) * 100));
+  const progress = Math.min(100, Math.round((earnings?.earningsICP || 0) / paymentGoal * 100));
+
+  const handleSetGoal = async () => {
+    const val = parseFloat(goalInput);
+    if (!isNaN(val) && val > 0) {
+      try {
+        const result = await setPaymentGoal(val);
+        if (result.success) {
+          setPaymentGoalState(val);
+          setWithdrawMsg('Payment goal updated successfully!');
+          setTimeout(() => setWithdrawMsg(''), 3000);
+        }
+      } catch (error) {
+        console.error('Failed to set payment goal:', error);
+        setWithdrawMsg('Failed to update payment goal.');
+      }
+    }
+  };
+
+  const handleWithdraw = async () => {
+    const amt = parseFloat(withdrawAmount);
+    if (!amt || amt <= 0) {
+      setWithdrawMsg('Enter a valid amount.');
+      return;
+    }
+    
+    if (amt > (earnings?.earningsICP || 0)) {
+      setWithdrawMsg('Amount exceeds available balance.');
+      return;
+    }
+    
+    setIsWithdrawing(true);
+    setWithdrawMsg('');
+    
+    try {
+      const result = await withdrawEarnings(amt);
+      if (result.success) {
+        setWithdrawMsg(`Withdrawal successful! Transaction ID: ${result.transactionId}`);
+        setWithdrawAmount('');
+        // Refresh earnings data
+        const updatedEarnings = await getAletheianEarnings(user.principal);
+        setEarnings(updatedEarnings);
+      } else {
+        setWithdrawMsg(result.message || 'Withdrawal failed.');
+      }
+    } catch (error) {
+      console.error('Withdrawal failed:', error);
+      setWithdrawMsg('Network error during withdrawal.');
+    } finally {
+      setIsWithdrawing(false);
+    }
+  };
 
   return (
     <div className="min-h-screen p-4 relative overflow-hidden">
@@ -88,10 +143,7 @@ const FinancePage: React.FC = () => {
               />
               <button
                 className="luxury-btn px-4 py-2"
-                onClick={() => {
-                  const val = parseInt(goalInput);
-                  if (!isNaN(val) && val > 0) setPaymentGoal(val);
-                }}
+                onClick={handleSetGoal}
               >
                 Set Goal
               </button>
@@ -165,20 +217,10 @@ const FinancePage: React.FC = () => {
               />
               <button
                 className="luxury-btn"
-                onClick={() => {
-                  const amt = parseInt(withdrawAmount);
-                  if (!amt || amt < 1) {
-                    setWithdrawMsg('Enter a valid amount.');
-                  } else if (amt > available) {
-                    setWithdrawMsg('Amount exceeds available balance.');
-                  } else {
-                    setWithdrawMsg('Withdrawal request submitted!');
-                    setWithdrawAmount('');
-                  }
-                }}
-                disabled={available === 0}
+                onClick={handleWithdraw}
+                disabled={isWithdrawing || !withdrawAmount || parseFloat(withdrawAmount) <= 0}
               >
-                Withdraw Funds
+                {isWithdrawing ? 'Processing...' : 'Withdraw Funds'}
               </button>
             </div>
           </div>

@@ -7,22 +7,40 @@ import ClaimAssignment from '../components/ClaimAssignment';
 import ReputationBadge from '../components/ReputationBadge';
 import { useAuth } from '../services/auth';
 import { getAletheianClaims } from '../services/claims';
-import { useSelector } from 'react-redux';
+import { getNotifications } from '../services/notifications';
+import NotificationBell from '../components/NotificationBell';
 
 const AletheianDashboard: React.FC = () => {
   const { user } = useAuth();
   const [assignments, setAssignments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    claimsVerified: 0,
+    accuracy: 0,
+    escalationsResolved: 0
+  });
   const navigate = useNavigate(); // Correct usage
-  // Get unread notifications from Redux if available, else mock
-  const unreadCount = useSelector((state: any) => state.notifications ? state.notifications.filter((n: any) => !n.read).length : 2);
+
   useEffect(() => {
-    const fetchClaims = async () => {
+    const fetchDashboardData = async () => {
       if (user) {
         setIsLoading(true);
         try {
-          const claims = await getAletheianClaims(user.principal);
+          const [claims, notifs] = await Promise.all([
+            getAletheianClaims(user.principal),
+            getNotifications(true) // unread only
+          ]);
+          
           setAssignments(claims);
+          setNotifications(notifs);
+          
+          // Set stats from user profile
+          setStats({
+            claimsVerified: user.claimsVerified,
+            accuracy: Math.round(user.accuracy),
+            escalationsResolved: Math.floor(user.claimsVerified * 0.1) // Estimate
+          });
         } catch (error) {
           console.error('Failed to fetch claims:', error);
         } finally {
@@ -31,7 +49,7 @@ const AletheianDashboard: React.FC = () => {
       }
     };
 
-    fetchClaims();
+    fetchDashboardData();
   }, [user]);
 
   const handleClaimSelect = (claimId: string) => {
@@ -39,6 +57,8 @@ const AletheianDashboard: React.FC = () => {
   };
 
   if (!user) {
+    const unreadCount = notifications.filter(n => !n.read).length;
+
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -74,19 +94,7 @@ const AletheianDashboard: React.FC = () => {
         <header className="flex justify-between items-center py-6 mb-8">
           <h1 className="text-3xl font-bold text-cream">Aletheian Dashboard</h1>
           <div className="flex gap-4 items-center">
-            {/* Notification Bell */}
-            <button
-              className="relative focus:outline-none mr-2"
-              aria-label="Open Notification Center"
-              onClick={() => navigate('/notifications')}
-            >
-              <span className="text-3xl text-gold">🔔</span>
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-gold text-red-900 text-xs font-bold rounded-full px-2 py-0.5 border-2 border-red-900">
-                  {unreadCount}
-                </span>
-              )}
-            </button>
+            <NotificationBell />
             <ReputationBadge 
               xp={user.xp} 
               rank={user.rank} 
@@ -191,15 +199,15 @@ const AletheianDashboard: React.FC = () => {
             <h2 className="text-2xl font-semibold text-cream mb-4">Performance Stats</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-purple-900 bg-opacity-30 rounded-lg p-4 text-center">
-                <p className="text-3xl font-bold text-gold">42</p>
+                <p className="text-3xl font-bold text-gold">{stats.claimsVerified}</p>
                 <p className="text-cream">Claims Verified</p>
               </div>
               <div className="bg-purple-900 bg-opacity-30 rounded-lg p-4 text-center">
-                <p className="text-3xl font-bold text-gold">98%</p>
+                <p className="text-3xl font-bold text-gold">{stats.accuracy}%</p>
                 <p className="text-cream">Accuracy</p>
               </div>
               <div className="bg-purple-900 bg-opacity-30 rounded-lg p-4 text-center">
-                <p className="text-3xl font-bold text-gold">12</p>
+                <p className="text-3xl font-bold text-gold">{stats.escalationsResolved}</p>
                 <p className="text-cream">Escalations Resolved</p>
               </div>
             </div>
