@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import GlassCard from './GlassCard';
 import PurpleButton from './PurpleButton';
-import { getClaimDetails } from '../services/claims';
+import { getClaimDetails, submitVerification, searchDuplicateClaims, getAIResearch } from '../services/claims';
 
 interface EvidenceItem {
   source: string;
@@ -20,6 +20,8 @@ const VerificationInterface: React.FC<{ claimId: string }> = ({ claimId }) => {
   const [linkedEvidence, setLinkedEvidence] = useState<number[]>([]); // indices of linked evidence
   const [aiLoading, setAiLoading] = useState(false);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -39,8 +41,33 @@ const VerificationInterface: React.FC<{ claimId: string }> = ({ claimId }) => {
   }, [claimId]);
 
   const handleSubmit = async () => {
-    // Submit verification to canister
-    console.log('Submitting verification:', { verdict, explanation });
+    if (!verdict || !explanation.trim()) {
+      setSubmitMessage('Please provide both verdict and explanation.');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    setSubmitMessage(null);
+    
+    try {
+      const evidenceLinks = linkedEvidence.map(i => evidence[i]?.url).filter(Boolean);
+      const result = await submitVerification(claimId, verdict, explanation, evidenceLinks);
+      
+      if (result.success) {
+        setSubmitMessage('Verification submitted successfully!');
+        // Reset form
+        setVerdict('');
+        setExplanation('');
+        setLinkedEvidence([]);
+      } else {
+        setSubmitMessage(result.message);
+      }
+    } catch (error) {
+      console.error('Submission failed:', error);
+      setSubmitMessage('Failed to submit verification. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Rich text editor handler
@@ -59,18 +86,45 @@ const VerificationInterface: React.FC<{ claimId: string }> = ({ claimId }) => {
   const handleAISimilarClaims = async () => {
     setAiLoading(true);
     setAiMessage(null);
-    setTimeout(() => {
-      setAiMessage('No similar claims found on the blockchain.');
+    
+    try {
+      const duplicates = await searchDuplicateClaims(claim?.text || '');
+      if (duplicates.length > 0) {
+        setAiMessage(`Found ${duplicates.length} similar claims on blockchain.`);
+      } else {
+        setAiMessage('No similar claims found on the blockchain.');
+      }
+    } catch (error) {
+      setAiMessage('Failed to search for similar claims.');
+    } finally {
       setAiLoading(false);
-    }, 1200);
+    }
   };
+  
   const handleAIRetrieveEvidence = async () => {
     setAiLoading(true);
     setAiMessage(null);
-    setTimeout(() => {
-      setAiMessage('AI retrieved 2 new evidence items. (Demo only)');
+    
+    try {
+      const research = await getAIResearch(claim?.text || '');
+      if (research.length > 0) {
+        // Add new evidence to the list
+        const newEvidence = research.map(item => ({
+          source: item.title,
+          url: item.url,
+          summary: item.summary,
+          credibility: item.credibility * 10 // Convert to 0-10 scale
+        }));
+        setEvidence(prev => [...prev, ...newEvidence]);
+        setAiMessage(`AI retrieved ${research.length} new evidence items.`);
+      } else {
+        setAiMessage('No additional evidence found by AI.');
+      }
+    } catch (error) {
+      setAiMessage('Failed to retrieve additional evidence.');
+    } finally {
       setAiLoading(false);
-    }, 1200);
+    }
   };
 
   if (isLoading) {
@@ -198,10 +252,10 @@ const VerificationInterface: React.FC<{ claimId: string }> = ({ claimId }) => {
       <div className="flex gap-4">
         <PurpleButton
           onClick={handleSubmit}
-          disabled={!verdict || !explanation.trim()}
+          disabled={!verdict || !explanation.trim() || isSubmitting}
           className="flex-1 py-4"
         >
-          Submit Verification
+          {isSubmitting ? 'Submitting...' : 'Submit Verification'}
         </PurpleButton>
 
         <PurpleButton
@@ -211,6 +265,12 @@ const VerificationInterface: React.FC<{ claimId: string }> = ({ claimId }) => {
           Request Escalation
         </PurpleButton>
       </div>
+      
+      {submitMessage && (
+        <div className={`mt-4 p-3 rounded-lg ${submitMessage.includes('success') ? 'bg-green-900 bg-opacity-30 text-green-300' : 'bg-red-900 bg-opacity-30 text-red-300'}`}>
+          {submitMessage}
+        </div>
+      )}
     </GlassCard>
   );
 };

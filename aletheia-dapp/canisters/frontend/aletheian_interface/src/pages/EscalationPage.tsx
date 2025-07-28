@@ -3,9 +3,14 @@ import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import EscalationReview from '../components/EscalationReview';
 import GlassCard from '../components/GlassCard';
+import { getEscalatedClaim, submitSeniorFinding, submitCouncilFinding } from '../services/escalation';
+import { useAuth } from '../services/auth';
 
 const EscalationPage: React.FC = () => {
   const { claimId } = useParams<{ claimId: string }>();
+  const { user } = useAuth();
+  const [escalatedClaim, setEscalatedClaim] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
   // Mock claim data
   const claim = {
     id: claimId || 'claim-101',
@@ -29,6 +34,74 @@ const EscalationPage: React.FC = () => {
   const [councilSummary, setCouncilSummary] = useState('');
   const [councilSubmitted, setCouncilSubmitted] = useState(false);
 
+  // Load escalated claim data
+  React.useEffect(() => {
+    const loadEscalatedClaim = async () => {
+      if (!claimId) return;
+      
+      setIsLoading(true);
+      try {
+        const claim = await getEscalatedClaim(claimId);
+        setEscalatedClaim(claim);
+      } catch (error) {
+        console.error('Failed to load escalated claim:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadEscalatedClaim();
+  }, [claimId]);
+
+  const handleSubmitSeniorDecision = async () => {
+    if (!decision || !explanation.trim()) return;
+    
+    try {
+      const evidenceArray = evidence ? [evidence] : [];
+      const result = await submitSeniorFinding(claimId!, decision, explanation, evidenceArray);
+      
+      if (result.success) {
+        setSubmitted(true);
+      } else {
+        alert(`Failed to submit: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Failed to submit senior decision:', error);
+      alert('Failed to submit decision. Please try again.');
+    }
+  };
+
+  const handleSubmitCouncilDecision = async () => {
+    if (!councilSummary.trim()) return;
+    
+    // Determine final decision based on votes
+    const votes = Object.values(councilVotes);
+    const upholdVotes = votes.filter(v => v === 'UPHOLD').length;
+    const overturnVotes = votes.filter(v => v === 'OVERTURN').length;
+    
+    let finalDecision = '';
+    if (upholdVotes > overturnVotes) {
+      finalDecision = 'UPHOLD';
+    } else if (overturnVotes > upholdVotes) {
+      finalDecision = 'OVERTURN';
+    } else {
+      finalDecision = 'ABSTAIN';
+    }
+    
+    try {
+      const result = await submitCouncilFinding(claimId!, finalDecision, councilSummary, []);
+      
+      if (result.success) {
+        setCouncilSubmitted(true);
+      } else {
+        alert(`Failed to submit: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Failed to submit council decision:', error);
+      alert('Failed to submit decision. Please try again.');
+    }
+  };
+
   // Tally votes
   const tally = councilMembers.reduce(
     (acc, member) => {
@@ -45,6 +118,17 @@ const EscalationPage: React.FC = () => {
   if (tally.uphold >= majority) finalDecision = 'UPHOLD';
   else if (tally.overturn >= majority) finalDecision = 'OVERTURN';
   else if (tally.abstain >= majority) finalDecision = 'ABSTAIN';
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold mx-auto"></div>
+          <p className="mt-4 text-cream">Loading escalation data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen p-4">
@@ -95,7 +179,7 @@ const EscalationPage: React.FC = () => {
               <button
                 className="luxury-btn"
                 disabled={!decision || !explanation.trim()}
-                onClick={() => setSubmitted(true)}
+                onClick={handleSubmitSeniorDecision}
               >
                 Submit Escalation Decision
               </button>
@@ -165,7 +249,7 @@ const EscalationPage: React.FC = () => {
               <button
                 className="luxury-btn"
                 disabled={Object.values(councilVotes).filter(Boolean).length < councilMembers.length || !councilSummary.trim()}
-                onClick={() => setCouncilSubmitted(true)}
+                onClick={handleSubmitCouncilDecision}
               >
                 Submit Final Decision
               </button>

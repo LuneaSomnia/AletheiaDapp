@@ -3,10 +3,12 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import VerificationInterface from '../components/VerificationInterface';
 import GlassCard from '../components/GlassCard';
+import { getClaimDetails, searchDuplicateClaims, getAIResearch } from '../services/claims';
 
 const ClaimVerificationPage: React.FC = () => {
   const { claimId } = useParams<{ claimId: string }>();
   const navigate = useNavigate();
+  const [claimData, setClaimData] = useState<any>(null);
   const [accepted, setAccepted] = useState(false);
   const [declined, setDeclined] = useState(false);
   const [aiSearchLoading, setAiSearchLoading] = useState(true);
@@ -22,53 +24,43 @@ const ClaimVerificationPage: React.FC = () => {
   const [evidenceType, setEvidenceType] = useState<'link' | 'file' | 'hash'>('link');
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
 
-  // Simulate AI blockchain search for duplicates
+  // Load claim data and AI analysis
   React.useEffect(() => {
-    setAiSearchLoading(true);
-    setTimeout(() => {
-      // Mock duplicate results
-      setAiDuplicates([
-        {
-          id: 'claim-099',
-          text: 'COVID-19 vaccine causes microchips',
-          status: 'verified',
-          verdict: 'FALSE',
-          verifiedAt: '2024-06-01T10:00:00Z',
-        },
-        {
-          id: 'claim-098',
-          text: 'COVID-19 vaccine contains microchips',
-          status: 'verified',
-          verdict: 'FALSE',
-          verifiedAt: '2024-05-15T14:30:00Z',
-        },
-      ]);
-      setAiSearchLoading(false);
-    }, 1200);
+    const loadClaimData = async () => {
+      if (!claimId) return;
+      
+      try {
+        // Load claim details
+        const details = await getClaimDetails(claimId);
+        setClaimData(details);
+        
+        // Search for duplicates
+        setAiSearchLoading(true);
+        const duplicates = await searchDuplicateClaims(details.text);
+        setAiDuplicates(duplicates);
+        setAiSearchLoading(false);
+        
+        // Get AI research
+        setAiInfoLoading(true);
+        const research = await getAIResearch(details.text);
+        setAiSources(research);
+        setAiSummary(research.length > 0 
+          ? `AI analysis found ${research.length} relevant sources with average credibility of ${
+              (research.reduce((sum, r) => sum + r.credibility, 0) / research.length).toFixed(1)
+            }/10.`
+          : 'No relevant sources found by AI analysis.'
+        );
+        setAiInfoLoading(false);
+      } catch (error) {
+        console.error('Failed to load claim data:', error);
+        setAiSearchLoading(false);
+        setAiInfoLoading(false);
+      }
+    };
+    
+    loadClaimData();
   }, [claimId]);
 
-  // Simulate AI information retrieval
-  React.useEffect(() => {
-    setAiInfoLoading(true);
-    setTimeout(() => {
-      setAiSources([
-        {
-          title: 'WHO: COVID-19 Vaccines Do Not Contain Microchips',
-          url: 'https://www.who.int/news-room/feature-stories/detail/covid-19-vaccines-microchips-myth',
-        },
-        {
-          title: 'FactCheck.org: No Evidence of Microchips in Vaccines',
-          url: 'https://www.factcheck.org/2021/03/scicheck-no-evidence-covid-19-vaccines-contain-microchips/',
-        },
-        {
-          title: 'CDC: Myths and Facts about COVID-19 Vaccines',
-          url: 'https://www.cdc.gov/coronavirus/2019-ncov/vaccines/facts.html',
-        },
-      ]);
-      setAiSummary('Multiple reputable sources confirm that COVID-19 vaccines do not contain microchips. This myth has been debunked by the WHO, CDC, and independent fact-checkers.');
-      setAiInfoLoading(false);
-    }, 1400);
-  }, [claimId]);
 
   // Mock prioritized claim queue
   const claimQueue = [
@@ -131,7 +123,7 @@ const ClaimVerificationPage: React.FC = () => {
           <div className="mb-4 p-4 bg-gold bg-opacity-10 rounded-lg border border-gold flex flex-col gap-2">
             <div className="flex items-center gap-2 mb-2">
               <span className="bg-gold text-red-900 px-2 py-1 rounded-full text-xs font-bold">Current</span>
-              <span className="font-semibold text-cream">{currentClaim.text}</span>
+              <span className="font-semibold text-cream">{claimData?.text || currentClaim.text}</span>
               <span className="text-xs text-gold ml-2">Deadline: {new Date(currentClaim.deadline).toLocaleString()}</span>
             </div>
             {/* Accept/Decline Workflow */}

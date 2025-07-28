@@ -1,0 +1,35 @@
+context:
+  files:
+    - "**/*.ts"
+    - "**/*.tsx"
+    - "**/*.js"
+    - "**/*.jsx"
+    - "**/*.mo"          # Motoko canisters
+    - "**/*.did"         # Candid interface files
+    - "**/*.json"
+    - "**/*.md"
+    - "**/*.css"
+    - "**/*.scss"
+    - "**/*.svg"
+    - "**/*.jpg"
+    - "**/*.png"
+    - "**/*.html"
+    - "**/*.yml"
+    - "**/*.yaml"
+    - "dfx.json"
+    - "package.json"
+    - "tsconfig.json"
+    - "webpack.config.js"
+  exclude:
+    - "**/node_modules/**"
+    - "**/public/**"
+    - "**/.git/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/.dfx/**"
+    - "**/.vscode/**"
+    - "**/__pycache__/**"
+    - "**/*.log"
+    - "**/.DS_Store"
+
+contextSize: 120000

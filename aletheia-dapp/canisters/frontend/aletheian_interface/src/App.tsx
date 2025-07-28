@@ -10,9 +10,15 @@ import EscalationPage from './pages/EscalationPage';
 import FinancePage from './pages/FinancePage';
 import ProfilePage from './pages/ProfilePage';
 import { AuthProvider } from './services/auth';
+import { initializeAgent } from './services/canisters';
 import './aletheian.css';
 
 const App: React.FC = () => {
+  // Initialize agent on app start
+  React.useEffect(() => {
+    initializeAgent().catch(console.error);
+  }, []);
+
   return (
     <Provider store={store}>
       <AuthProvider>
