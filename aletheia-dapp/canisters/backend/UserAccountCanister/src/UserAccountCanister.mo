@@ -13,6 +13,12 @@ import Nat "mo:base/Nat";
 import _ "mo:base/Debug";
 
 actor UserAccountCanister {
+    // Configuration
+    stable var controller : Principal = caller;
+    stable var internetIdentityCanisterId : Principal = Principal.fromText("aaaaa-aa");
+    stable var authorizedCanisters : [(Principal, Bool)] = [];
+    stable var dataVersion : Nat = 1;
+    
     // Types
     public type UserId = Principal;
     public type AnonymousId = Text;
@@ -90,7 +96,7 @@ actor UserAccountCanister {
         let bytes = Blob.toArray(random);
         toHex(Array.tabulate<Nat8>(16, func(i : Nat) : Nat8 { 
             if (i < bytes.size()) bytes[i] else 0 : Nat8
-        }));
+        }))
     };
 
     // Convert byte array to hexadecimal string
@@ -168,7 +174,10 @@ actor UserAccountCanister {
     };
 
     // Record user activity (called by other canisters)
-    public shared func recordActivity(userId : UserId, activity : ActivityRecord) : async () {
+    public shared ({ caller }) func recordActivity(userId : UserId, activity : ActivityRecord) : async () {
+        if (caller != userId and not HashMap.has<Principal>(authorizedCanisters, Principal.equal, Principal.hash, caller)) {
+            throw Error.reject("Unauthorized activity recording");
+        };
         if (userProfiles.get(userId) != null) {
             let currentActivities = Option.get(userActivities.get(userId), []);
             let newActivities = Array.append(currentActivities, [activity]);
@@ -208,11 +217,35 @@ actor UserAccountCanister {
 
     // Admin function for system maintenance
     public shared ({ caller }) func adminGetUserProfile(userId : UserId) : async ?UserProfile {
-        // In production, add controller check here
+        if (caller != controller) {
+            return null;
+        };
         userProfiles.get(userId);
     };
 
     // Get anonymous ID for blockchain operations
+    public shared ({ caller }) func deactivateAccount() : async Result.Result<(), Text> {
+        switch (userProfiles.get(caller)) {
+            case (?profile) {
+                let anonymizedProfile : UserProfile = {
+                    profile with
+                    anonymousId = "";
+                    settings = {
+                        profile.settings with
+                        privacyLevel = #maximum;
+                        notifications = false;
+                    };
+                    lastActive = Time.now();
+                };
+                userProfiles.put(caller, anonymizedProfile);
+                #ok(());
+            };
+            case null {
+                #err("User profile not found");
+            };
+        };
+    };
+
     public shared query ({ caller }) func getAnonymousId() : async ?AnonymousId {
         switch (userProfiles.get(caller)) {
             case (?profile) ?profile.anonymousId;
