@@ -28,6 +28,14 @@ actor UserAccountCanister {
         createdAt : Int;
         lastActive : Int;
         settings : UserSettings;
+        deactivated : Bool;
+    };
+
+    public type PublicProfile = {
+        createdAt : Int;
+        lastActive : Int;
+        status : { #active; #deactivated };
+        privacyLevel : { #basic; #enhanced; #maximum };
     };
 
     public type UserSettings = {
@@ -63,6 +71,7 @@ actor UserAccountCanister {
         userProfilesEntries := Iter.toArray(userProfiles.entries());
         anonymousMappings := Iter.toArray(anonymousIdToUser.entries());
         activityLogs := Iter.toArray(userActivities.entries());
+        dataVersion := 2; // Bump version on schema change
     };
 
     system func postupgrade() {
@@ -75,6 +84,13 @@ actor UserAccountCanister {
         userActivities := HashMap.fromIter<UserId, [ActivityRecord]>(
             activityLogs.vals(), 0, Principal.equal, Principal.hash
         );
+        
+        // Convert authorizedCanisters array to HashMap
+        let authCanistersMap = HashMap.fromIter<Principal, Bool>(
+            authorizedCanisters.vals(), 0, Principal.equal, Principal.hash
+        );
+        authorizedCanisters := Iter.toArray(authCanistersMap.entries());
+
         userProfilesEntries := [];
         anonymousMappings := [];
         activityLogs := [];
@@ -210,9 +226,41 @@ actor UserAccountCanister {
     };
 
     // Internet Identity integration
-    public shared func getInternetIdentityCanisterId() : async Principal {
-        // TODO: Return the correct Internet Identity canister principal here
-        Principal.fromText("aaaaa-aa")
+    public shared query func getInternetIdentityCanisterId() : async Principal {
+        internetIdentityCanisterId
+    };
+
+    // Admin APIs
+    public shared ({ caller }) func authorizeCanister(canisterId : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized: Only controller can authorize canisters");
+        };
+        authorizedCanisters := Array.append(authorizedCanisters, [(canisterId, true)]);
+        #ok(())
+    };
+
+    public shared ({ caller }) func revokeCanister(canisterId : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized: Only controller can revoke canisters");
+        };
+        authorizedCanisters := Array.filter<(Principal, Bool)>(authorizedCanisters, func ((p, _)) = p != canisterId);
+        #ok(())
+    };
+
+    public shared ({ caller }) func setInternetIdentityCanisterId(newId : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized: Only controller can set Internet Identity canister");
+        };
+        internetIdentityCanisterId := newId;
+        #ok(())
+    };
+
+    public shared ({ caller }) func setController(newController : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized: Only current controller can transfer control");
+        };
+        controller := newController;
+        #ok(())
     };
 
     // Admin function for system maintenance
@@ -244,6 +292,20 @@ actor UserAccountCanister {
                 #err("User profile not found");
             };
         };
+    };
+
+    public shared query func getPublicProfile(userId : UserId) : async ?PublicProfile {
+        switch (userProfiles.get(userId)) {
+            case (?profile) {
+                ?{
+                    createdAt = profile.createdAt;
+                    lastActive = profile.lastActive;
+                    status = if (profile.deactivated) #deactivated else #active;
+                    privacyLevel = profile.settings.privacyLevel;
+                }
+            };
+            case null null;
+        }
     };
 
     public shared query ({ caller }) func getAnonymousId() : async ?AnonymousId {
