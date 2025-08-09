@@ -67,14 +67,17 @@ actor UserAccountCanister {
     };
 
     // Initialize from stable storage
+    /// Serializes in-memory HashMaps to stable arrays before upgrade
     system func preupgrade() {
         _userProfilesBackup := Iter.toArray(userProfiles.entries());
         _anonymousMappingsBackup := Iter.toArray(anonymousIdToUser.entries());
         _activityLogsBackup := Iter.toArray(userActivities.entries());
-        dataVersion := 2; // Bump version on schema change
+        dataVersion := 2; // Schema version must match current data structure
     };
 
+    /// Rebuilds HashMaps from stable arrays after upgrade and cleans up
     system func postupgrade() {
+        // Rehydrate HashMaps from their stable backups
         userProfiles := HashMap.fromIter<UserId, UserProfile>(
             _userProfilesBackup.vals(), 0, Principal.equal, Principal.hash
         );
@@ -85,12 +88,13 @@ actor UserAccountCanister {
             _activityLogsBackup.vals(), 0, Principal.equal, Principal.hash
         );
         
-        // Convert authorizedCanisters array to HashMap
+        // Deduplicate authorized canisters using HashMap conversion
         let authCanistersMap = HashMap.fromIter<Principal, Bool>(
             authorizedCanisters.vals(), 0, Principal.equal, Principal.hash
         );
         authorizedCanisters := Iter.toArray(authCanistersMap.entries());
 
+        // Clear backups to prevent data duplication
         _userProfilesBackup := [];
         _anonymousMappingsBackup := [];
         _activityLogsBackup := [];
@@ -190,14 +194,20 @@ actor UserAccountCanister {
     };
 
     // Record user activity (called by other canisters)
-    public shared ({ caller }) func recordActivity(userId : UserId, activity : ActivityRecord) : async () {
+    public shared ({ caller }) func recordActivity(userId : UserId, activity : ActivityRecord) : async Result.Result<(), Text> {
         if (caller != userId and not HashMap.has<Principal>(authorizedCanisters, Principal.equal, Principal.hash, caller)) {
-            throw Error.reject("Unauthorized activity recording");
+            return #err("Unauthorized activity recording");
         };
-        if (userProfiles.get(userId) != null) {
-            let currentActivities = Option.get(userActivities.get(userId), []);
-            let newActivities = Array.append(currentActivities, [activity]);
-            userActivities.put(userId, newActivities);
+        switch (userProfiles.get(userId)) {
+            case (?profile) {
+                let currentActivities = Option.get(userActivities.get(userId), []);
+                let newActivities = Array.append(currentActivities, [activity]);
+                userActivities.put(userId, newActivities);
+                #ok(());
+            };
+            case null {
+                #err("User profile not found");
+            };
         };
     };
 
