@@ -51,12 +51,12 @@ actor UserAccountCanister {
         activityType : { #claimSubmitted; #factChecked; #learningCompleted };
     };
 
-    // Stable storage
-    stable var userProfilesEntries : [(UserId, UserProfile)] = [];
-    stable var anonymousMappings : [(AnonymousId, UserId)] = [];
-    stable var activityLogs : [(UserId, [ActivityRecord])] = [];
+    // Stable storage backups
+    private stable var _userProfilesBackup : [(UserId, UserProfile)] = [];
+    private stable var _anonymousMappingsBackup : [(AnonymousId, UserId)] = [];
+    private stable var _activityLogsBackup : [(UserId, [ActivityRecord])] = [];
 
-    // Runtime storage (var for upgrade handling)
+    // Runtime storage
     var userProfiles = HashMap.HashMap<UserId, UserProfile>(0, Principal.equal, Principal.hash);
     var anonymousIdToUser = HashMap.HashMap<AnonymousId, UserId>(0, Text.equal, Text.hash);
     var userActivities = HashMap.HashMap<UserId, [ActivityRecord]>(0, Principal.equal, Principal.hash);
@@ -68,21 +68,21 @@ actor UserAccountCanister {
 
     // Initialize from stable storage
     system func preupgrade() {
-        userProfilesEntries := Iter.toArray(userProfiles.entries());
-        anonymousMappings := Iter.toArray(anonymousIdToUser.entries());
-        activityLogs := Iter.toArray(userActivities.entries());
+        _userProfilesBackup := Iter.toArray(userProfiles.entries());
+        _anonymousMappingsBackup := Iter.toArray(anonymousIdToUser.entries());
+        _activityLogsBackup := Iter.toArray(userActivities.entries());
         dataVersion := 2; // Bump version on schema change
     };
 
     system func postupgrade() {
         userProfiles := HashMap.fromIter<UserId, UserProfile>(
-            userProfilesEntries.vals(), 0, Principal.equal, Principal.hash
+            _userProfilesBackup.vals(), 0, Principal.equal, Principal.hash
         );
         anonymousIdToUser := HashMap.fromIter<AnonymousId, UserId>(
-            anonymousMappings.vals(), 0, Text.equal, Text.hash
+            _anonymousMappingsBackup.vals(), 0, Text.equal, Text.hash
         );
         userActivities := HashMap.fromIter<UserId, [ActivityRecord]>(
-            activityLogs.vals(), 0, Principal.equal, Principal.hash
+            _activityLogsBackup.vals(), 0, Principal.equal, Principal.hash
         );
         
         // Convert authorizedCanisters array to HashMap
@@ -91,9 +91,9 @@ actor UserAccountCanister {
         );
         authorizedCanisters := Iter.toArray(authCanistersMap.entries());
 
-        userProfilesEntries := [];
-        anonymousMappings := [];
-        activityLogs := [];
+        _userProfilesBackup := [];
+        _anonymousMappingsBackup := [];
+        _activityLogsBackup := [];
     };
 
     // Initialize with default settings
