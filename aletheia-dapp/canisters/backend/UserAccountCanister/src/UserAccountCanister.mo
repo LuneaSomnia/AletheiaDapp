@@ -17,7 +17,7 @@ actor UserAccountCanister {
     stable var controller : Principal = caller;
     stable var internetIdentityCanisterId : Principal = Principal.fromText("aaaaa-aa");
     stable var authorizedCanisters : [(Principal, Bool)] = []; // Stored as array for stability
-    var authorizedCanisters = HashMap.HashMap<Principal, Bool>(0, Principal.equal, Principal.hash);
+    var authorizedCanisters = HashMap.fromIter<Principal, Bool>(authorizedCanisters.vals(), 0, Principal.equal, Principal.hash);
     stable var dataVersion : Nat = 1;
     
     // Types
@@ -64,7 +64,7 @@ actor UserAccountCanister {
 
     // Canister references
     let notification = actor ("NotificationCanister") : actor {
-        sendNotification : (userId : Principal, title : Text, message : Text, notifType : Text) -> async Nat;
+        sendNotification : (userId : Principal, title : Text, message : Text, notificationType : Text) -> async Nat;
     };
 
     // Initialize from stable storage
@@ -286,28 +286,6 @@ actor UserAccountCanister {
     };
 
     // Get anonymous ID for blockchain operations
-    public shared ({ caller }) func deactivateAccount() : async Result.Result<(), Text> {
-        switch (userProfiles.get(caller)) {
-            case (?profile) {
-                let anonymizedProfile : UserProfile = {
-                    profile with
-                    anonymousId = "";
-                    settings = {
-                        profile.settings with
-                        privacyLevel = #maximum;
-                        notifications = false;
-                    };
-                    lastActive = Time.now();
-                };
-                userProfiles.put(caller, anonymizedProfile);
-                #ok(());
-            };
-            case null {
-                #err("User profile not found");
-            };
-        };
-    };
-
     public shared({ caller }) func deactivateAccount() : async Result.Result<(), Text> {
         switch (userProfiles.get(caller)) {
             case (?profile) {
