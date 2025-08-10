@@ -116,10 +116,11 @@ actor UserAccountCanister {
     func generateAnonymousId() : async AnonymousId {
         let random = await Random.blob();
         let bytes = Blob.toArray(random);
-        let anonymousId = toHex(Array.tabulate<Nat8>(16, func(i : Nat) : Nat8 { 
+        // Generate 16 random bytes (128 bits) for anonymous ID
+        let anonymousIdBytes = Array.tabulate<Nat8>(16, func(i : Nat) : Nat8 { 
             if (i < bytes.size()) bytes[i] else 0 : Nat8
-        }));
-        anonymousId
+        });
+        toHex(anonymousIdBytes)
     };
 
     // Convert byte array to hexadecimal string
@@ -251,6 +252,11 @@ actor UserAccountCanister {
         };
         authorizedCanisters.put(canisterId, true);
         #ok(())
+        if (caller != controller) {
+            return #err("Unauthorized: Only controller can authorize canisters");
+        };
+        authorizedCanisters.put(canisterId, true);
+        #ok(())
     };
 
     public shared ({ caller }) func revokeCanister(canisterId : Principal) : async Result.Result<(), Text> {
@@ -287,6 +293,26 @@ actor UserAccountCanister {
 
     // Get anonymous ID for blockchain operations
     public shared({ caller }) func deactivateAccount() : async Result.Result<(), Text> {
+        switch (userProfiles.get(caller)) {
+            case (?profile) {
+                let anonymizedProfile : UserProfile = {
+                    profile with
+                    anonymousId = "";
+                    settings = {
+                        profile.settings with
+                        privacyLevel = #maximum;
+                        notifications = false;
+                    };
+                    lastActive = Time.now();
+                    deactivated = true;
+                };
+                userProfiles.put(caller, anonymizedProfile);
+                #ok(());
+            };
+            case null {
+                #err("User profile not found");
+            };
+        };
         switch (userProfiles.get(caller)) {
             case (?profile) {
                 let anonymizedProfile : UserProfile = {
