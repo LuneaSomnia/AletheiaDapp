@@ -69,6 +69,7 @@ actor UserAccountCanister {
     // Initialize from stable storage
     /// Serializes in-memory HashMaps to stable arrays before upgrade
     system func preupgrade() {
+        dataVersion := 2;
         _userProfilesBackup := Iter.toArray(userProfiles.entries());
         _anonymousMappingsBackup := Iter.toArray(anonymousIdToUser.entries());
         _activityLogsBackup := Iter.toArray(userActivities.entries());
@@ -114,9 +115,10 @@ actor UserAccountCanister {
     func generateAnonymousId() : async AnonymousId {
         let random = await Random.blob();
         let bytes = Blob.toArray(random);
-        toHex(Array.tabulate<Nat8>(16, func(i : Nat) : Nat8 { 
+        let anonymousId = toHex(Array.tabulate<Nat8>(16, func(i : Nat) : Nat8 { 
             if (i < bytes.size()) bytes[i] else 0 : Nat8
-        }))
+        }));
+        anonymousId
     };
 
     // Convert byte array to hexadecimal string
@@ -194,7 +196,8 @@ actor UserAccountCanister {
     };
 
     // Record user activity (called by other canisters)
-    public shared ({ caller }) func recordActivity(userId : UserId, activity : ActivityRecord) : async Result.Result<(), Text> {
+    public shared ({ caller }) func recordActivity(userId : UserId, activity : Types.ActivityRecord) : async Result.Result<(), Text> {
+        // Allow either self-reported activity or from authorized canisters
         if (caller != userId and not HashMap.has<Principal>(authorizedCanisters, Principal.equal, Principal.hash, caller)) {
             return #err("Unauthorized activity recording");
         };
@@ -249,6 +252,14 @@ actor UserAccountCanister {
         #ok(())
     };
 
+    public shared({ caller }) func authorizeCanister(canisterId : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized: Only controller can authorize canisters");
+        };
+        authorizedCanisters.put(canisterId, true);
+        #ok(())
+    };
+
     public shared ({ caller }) func revokeCanister(canisterId : Principal) : async Result.Result<(), Text> {
         if (caller != controller) {
             return #err("Unauthorized: Only controller can revoke canisters");
@@ -294,6 +305,29 @@ actor UserAccountCanister {
                         notifications = false;
                     };
                     lastActive = Time.now();
+                };
+                userProfiles.put(caller, anonymizedProfile);
+                #ok(());
+            };
+            case null {
+                #err("User profile not found");
+            };
+        };
+    };
+
+    public shared({ caller }) func deactivateAccount() : async Result.Result<(), Text> {
+        switch (userProfiles.get(caller)) {
+            case (?profile) {
+                let anonymizedProfile : UserProfile = {
+                    profile with
+                    anonymousId = "";
+                    settings = {
+                        profile.settings with
+                        privacyLevel = #maximum;
+                        notifications = false;
+                    };
+                    lastActive = Time.now();
+                    deactivated = true;
                 };
                 userProfiles.put(caller, anonymizedProfile);
                 #ok(());
