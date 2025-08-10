@@ -16,7 +16,8 @@ actor UserAccountCanister {
     // Configuration
     stable var controller : Principal = caller;
     stable var internetIdentityCanisterId : Principal = Principal.fromText("aaaaa-aa");
-    stable var authorizedCanisters : [(Principal, Bool)] = [];
+    stable var authorizedCanisters : [(Principal, Bool)] = []; // Stored as array for stability
+    var authorizedCanisters = HashMap.HashMap<Principal, Bool>(0, Principal.equal, Principal.hash);
     stable var dataVersion : Nat = 1;
     
     // Types
@@ -89,11 +90,11 @@ actor UserAccountCanister {
             _activityLogsBackup.vals(), 0, Principal.equal, Principal.hash
         );
         
-        // Deduplicate authorized canisters using HashMap conversion
+        // Convert stable array to HashMap
         let authCanistersMap = HashMap.fromIter<Principal, Bool>(
             authorizedCanisters.vals(), 0, Principal.equal, Principal.hash
         );
-        authorizedCanisters := Iter.toArray(authCanistersMap.entries());
+        authorizedCanisters := authCanistersMap;
 
         // Clear backups to prevent data duplication
         _userProfilesBackup := [];
@@ -244,14 +245,6 @@ actor UserAccountCanister {
     };
 
     // Admin APIs
-    public shared ({ caller }) func authorizeCanister(canisterId : Principal) : async Result.Result<(), Text> {
-        if (caller != controller) {
-            return #err("Unauthorized: Only controller can authorize canisters");
-        };
-        authorizedCanisters := Array.append(authorizedCanisters, [(canisterId, true)]);
-        #ok(())
-    };
-
     public shared({ caller }) func authorizeCanister(canisterId : Principal) : async Result.Result<(), Text> {
         if (caller != controller) {
             return #err("Unauthorized: Only controller can authorize canisters");
@@ -264,7 +257,7 @@ actor UserAccountCanister {
         if (caller != controller) {
             return #err("Unauthorized: Only controller can revoke canisters");
         };
-        authorizedCanisters := Array.filter<(Principal, Bool)>(authorizedCanisters, func ((p, _)) = p != canisterId);
+        authorizedCanisters.delete(canisterId);
         #ok(())
     };
 
