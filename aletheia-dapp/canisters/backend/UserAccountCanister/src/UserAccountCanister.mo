@@ -285,11 +285,11 @@ actor UserAccountCanister {
     };
 
     // Admin function for system maintenance
-    public shared ({ caller }) func adminGetUserProfile(userId : UserId) : async ?UserProfile {
+    public shared ({ caller }) func adminGetUserProfile(userId : UserId) : async Result.Result<?UserProfile, Text> {
         if (caller != controller) {
-            return null;
+            return #err("Unauthorized: Only controller can access user profiles");
         };
-        userProfiles.get(userId);
+        #ok(userProfiles.get(userId));
     };
 
     // Get anonymous ID for blockchain operations
