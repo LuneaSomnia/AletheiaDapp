@@ -13,12 +13,14 @@ import Nat "mo:base/Nat";
 import _ "mo:base/Debug";
 
 actor UserAccountCanister {
-    // Configuration
+    // Configuration - stable vars must be declared first
     stable var controller : Principal = caller;
     stable var internetIdentityCanisterId : Principal = Principal.fromText("aaaaa-aa");
-    stable var authorizedCanisters : [(Principal, Bool)] = []; // Stored as array for stability
-    var authorizedCanisters = HashMap.fromIter<Principal, Bool>(authorizedCanisters.vals(), 0, Principal.equal, Principal.hash);
+    stable var authorizedCanisters : [(Principal, Bool)] = [];
     stable var dataVersion : Nat = 1;
+    
+    // Non-stable storage (rebuilt during postupgrade)
+    var authorizedCanistersMap = HashMap.fromIter<Principal, Bool>(authorizedCanisters.vals(), 0, Principal.equal, Principal.hash);
     
     // Types
     public type UserId = Principal;
@@ -70,11 +72,12 @@ actor UserAccountCanister {
     // Initialize from stable storage
     /// Serializes in-memory HashMaps to stable arrays before upgrade
     system func preupgrade() {
+        // Serialize current state to stable storage
         dataVersion := 2;
         _userProfilesBackup := Iter.toArray(userProfiles.entries());
         _anonymousMappingsBackup := Iter.toArray(anonymousIdToUser.entries());
         _activityLogsBackup := Iter.toArray(userActivities.entries());
-        dataVersion := 2; // Schema version must match current data structure
+        authorizedCanisters := Iter.toArray(authorizedCanistersMap.entries());
     };
 
     /// Rebuilds HashMaps from stable arrays after upgrade and cleans up
@@ -112,11 +115,11 @@ actor UserAccountCanister {
         }
     };
 
-    // Generate random hexadecimal string for anonymous IDs
+    // Generate random hexadecimal string for anonymous IDs (32 chars = 16 bytes)
     func generateAnonymousId() : async AnonymousId {
         let random = await Random.blob();
         let bytes = Blob.toArray(random);
-        // Generate 16 random bytes (128 bits) for anonymous ID
+        // Take first 16 bytes for anonymous ID
         let anonymousIdBytes = Array.tabulate<Nat8>(16, func(i : Nat) : Nat8 { 
             if (i < bytes.size()) bytes[i] else 0 : Nat8
         });
@@ -200,8 +203,8 @@ actor UserAccountCanister {
     // Record user activity (called by other canisters)
     public shared ({ caller }) func recordActivity(userId : UserId, activity : Types.ActivityRecord) : async Result.Result<(), Text> {
         // Allow either self-reported activity or from authorized canisters
-        if (caller != userId and not HashMap.has<Principal>(authorizedCanisters, Principal.equal, Principal.hash, caller)) {
-            return #err("Unauthorized activity recording");
+        if (caller != userId and not authorizedCanistersMap.has(caller)) {
+            return #err("Unauthorized activity recording. Caller must be user or authorized canister");
         };
         switch (userProfiles.get(userId)) {
             case (?profile) {
@@ -293,6 +296,26 @@ actor UserAccountCanister {
 
     // Get anonymous ID for blockchain operations
     public shared({ caller }) func deactivateAccount() : async Result.Result<(), Text> {
+        switch (userProfiles.get(caller)) {
+            case (?profile) {
+                let anonymizedProfile : UserProfile = {
+                    profile with
+                    anonymousId = "";
+                    settings = {
+                        profile.settings with
+                        privacyLevel = #maximum;
+                        notifications = false;
+                    };
+                    lastActive = Time.now();
+                    deactivated = true;
+                };
+                userProfiles.put(caller, anonymizedProfile);
+                #ok(());
+            };
+            case null {
+                #err("User profile not found");
+            };
+        };
         switch (userProfiles.get(caller)) {
             case (?profile) {
                 let anonymizedProfile : UserProfile = {
