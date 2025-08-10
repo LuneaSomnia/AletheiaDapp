@@ -94,10 +94,9 @@ actor UserAccountCanister {
         );
         
         // Convert stable array to HashMap
-        let authCanistersMap = HashMap.fromIter<Principal, Bool>(
+        authorizedCanistersMap := HashMap.fromIter<Principal, Bool>(
             authorizedCanisters.vals(), 0, Principal.equal, Principal.hash
         );
-        authorizedCanisters := authCanistersMap;
 
         // Clear backups to prevent data duplication
         _userProfilesBackup := [];
@@ -253,12 +252,7 @@ actor UserAccountCanister {
         if (caller != controller) {
             return #err("Unauthorized: Only controller can authorize canisters");
         };
-        authorizedCanisters.put(canisterId, true);
-        #ok(())
-        if (caller != controller) {
-            return #err("Unauthorized: Only controller can authorize canisters");
-        };
-        authorizedCanisters.put(canisterId, true);
+        authorizedCanistersMap.put(canisterId, true);
         #ok(())
     };
 
@@ -296,46 +290,6 @@ actor UserAccountCanister {
 
     // Get anonymous ID for blockchain operations
     public shared({ caller }) func deactivateAccount() : async Result.Result<(), Text> {
-        switch (userProfiles.get(caller)) {
-            case (?profile) {
-                let anonymizedProfile : UserProfile = {
-                    profile with
-                    anonymousId = "";
-                    settings = {
-                        profile.settings with
-                        privacyLevel = #maximum;
-                        notifications = false;
-                    };
-                    lastActive = Time.now();
-                    deactivated = true;
-                };
-                userProfiles.put(caller, anonymizedProfile);
-                #ok(());
-            };
-            case null {
-                #err("User profile not found");
-            };
-        };
-        switch (userProfiles.get(caller)) {
-            case (?profile) {
-                let anonymizedProfile : UserProfile = {
-                    profile with
-                    anonymousId = "";
-                    settings = {
-                        profile.settings with
-                        privacyLevel = #maximum;
-                        notifications = false;
-                    };
-                    lastActive = Time.now();
-                    deactivated = true;
-                };
-                userProfiles.put(caller, anonymizedProfile);
-                #ok(());
-            };
-            case null {
-                #err("User profile not found");
-            };
-        };
         switch (userProfiles.get(caller)) {
             case (?profile) {
                 let anonymizedProfile : UserProfile = {
