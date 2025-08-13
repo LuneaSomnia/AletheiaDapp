@@ -230,18 +230,14 @@ actor VerificationWorkflowCanister {
                             case (#ok(verdict, explanation, evidence)) {
                                 let _ = await finalizeTask(claimId, verdict, explanation, evidence, false);
                             };
-                        await finalizeTask(claimId, verdict, explanation, evidence, false);
+                            case (#err(reason)) {
                                 // Consensus not reached, escalate
-                                let escalated = await escalation.escalateClaim(claimId, reason);
-                                if (escalated) {
-                        let escalationResult = await escalation.escalateClaim(claimId, task.findings);
-                        switch (escalationResult) {
-                          case (#ok()) {
+                                let escalationResult = await escalation.escalateClaim(claimId, task.findings);
+                                switch (escalationResult) {
+                                    case (#ok()) {};
+                                    case (#err(e)) {};
                                 };
                             };
-                          };
-                          case (#err(_)) {};
-                        };
                     };
                 };
             };
