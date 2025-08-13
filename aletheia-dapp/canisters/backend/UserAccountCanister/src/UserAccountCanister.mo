@@ -34,6 +34,8 @@ actor UserAccountCanister {
         deactivated : Bool;
     };
 
+    // Added deactivated flag and explicit privacy controls
+
     public type PublicProfile = {
         createdAt : Int;
         lastActive : Int;
@@ -69,11 +71,11 @@ actor UserAccountCanister {
         sendNotification : (userId : Principal, title : Text, message : Text, notificationType : Text) -> async Nat;
     };
 
-    // Initialize from stable storage
-    /// Serializes in-memory HashMaps to stable arrays before upgrade
+    // Initialize from stable storage with versioning
     system func preupgrade() {
-        // Serialize current state to stable storage
+        // Bump version on schema changes
         dataVersion := 2;
+        // Serialize current state to stable storage
         _userProfilesBackup := Iter.toArray(userProfiles.entries());
         _anonymousMappingsBackup := Iter.toArray(anonymousIdToUser.entries());
         _activityLogsBackup := Iter.toArray(userActivities.entries());
@@ -115,10 +117,11 @@ actor UserAccountCanister {
     };
 
     // Generate random hexadecimal string for anonymous IDs (32 chars = 16 bytes)
+    // Generates 32-character hex string from 16 random bytes
     func generateAnonymousId() : async AnonymousId {
         let random = await Random.blob();
         let bytes = Blob.toArray(random);
-        // Take first 16 bytes for anonymous ID
+        // Take first 16 bytes and convert to hex
         let anonymousIdBytes = Array.tabulate<Nat8>(16, func(i : Nat) : Nat8 { 
             if (i < bytes.size()) bytes[i] else 0 : Nat8
         });
@@ -201,9 +204,9 @@ actor UserAccountCanister {
 
     // Record user activity (called by other canisters)
     public shared ({ caller }) func recordActivity(userId : UserId, activity : Types.ActivityRecord) : async Result.Result<(), Text> {
-        // Allow either self-reported activity or from authorized canisters
-        if (caller != userId and not authorizedCanistersMap.has(caller)) {
-            return #err("Unauthorized activity recording. Caller must be user or authorized canister");
+        // Enforce allowlist: user or authorized canisters only
+        if (caller != userId and Option.isNull(authorizedCanistersMap.get(caller))) {
+            return #err("Unauthorized: Caller must be user or authorized canister");
         };
         switch (userProfiles.get(userId)) {
             case (?profile) {
@@ -292,6 +295,30 @@ actor UserAccountCanister {
     public shared({ caller }) func deactivateAccount() : async Result.Result<(), Text> {
         switch (userProfiles.get(caller)) {
             case (?profile) {
+                let anonymizedProfile : UserProfile = {
+                    profile with
+                    anonymousId = "";
+                    settings = {
+                        profile.settings with
+                        privacyLevel = #maximum;
+                        notifications = false;
+                    };
+                    lastActive = Time.now();
+                    deactivated = true;
+                };
+                userProfiles.put(caller, anonymizedProfile);
+                #ok(());
+            };
+            case null {
+                #err("User profile not found");
+            };
+        };
+    };
+
+    public shared({ caller }) func deactivateAccount() : async Result.Result<(), Text> {
+        switch (userProfiles.get(caller)) {
+            case (?profile) {
+                // Anonymize profile but keep audit trail
                 let anonymizedProfile : UserProfile = {
                     profile with
                     anonymousId = "";
