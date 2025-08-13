@@ -167,7 +167,10 @@ actor AI_IntegrationCanister {
         };
         
         // Simple number redaction
-        let digitsOnly = T.replace(modified, #char func (c) { not Char.isDigit(c) }, "");
+        let digitsOnly = T.map(modified, func (c : Char) : Char {
+            if (Char.isDigit(c)) c else 'x'
+        });
+        let digitsOnly = T.replace(digitsOnly, #text "x", "");
         if (digitsOnly.size() >= 7) {
             modified := T.replace(modified, #text digitsOnly, "[REDACTED]");
             redacted := true;
@@ -232,9 +235,10 @@ actor AI_IntegrationCanister {
     };
 
     // Helper functions
+    func generateFingerprint(req : Types.AIAdapterRequest) : Text {
         // Simple deterministic fingerprint using text hash
         let base = req.requestType # "|" # req.claimId # "|" # req.text;
-        Text.hash(base) // TODO: Replace with proper cryptographic hash
+        Nat.toText(Text.hash(base)) // TODO: Replace with proper cryptographic hash
     };
 
     func checkRateLimit(principal : Principal) : Result.Result<(), Text> {
