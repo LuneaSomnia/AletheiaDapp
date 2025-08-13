@@ -13,33 +13,22 @@ import Nat8 "mo:base/Nat8";
 // SHA256 not available in Motoko 0.9.8 base library. Use a stub or plug in a compatible library.
 
 actor ClaimSubmissionCanister {
-    type ClaimType = {
-        #text;
-        #image;
-        #video;
-        #audio;
-        #articleLink;
-        #fakeNewsUrl;
-        #other;
-    };
-
-    type ClaimContent = {
-        #text : Text;
-        #blob : Blob;
-        #url : Text;
-    };
-
-    type Claim = {
-        id : Text;
-        userId : Principal;
-        content : ClaimContent;
-        claimType : ClaimType;
-        context : ?Text;
-        source : ?Text;
-        timestamp : Int;
-        status : Text;
-        fileHash : ?Text; // SHA-256 hash for uploaded files
-    };
+    // Import common types
+    import T "mo:base/Text";
+    import Types "../common/Types";
+    
+    // Configuration
+    let MAX_TEXT_LENGTH = 5000; // 5000 characters
+    let MAX_RETRIES = 3;
+    let RETRY_DELAY_NS = 300_000_000_000; // 5 minutes in nanoseconds
+    
+    // Stable storage with versioning
+    stable var dataVersion : Nat = 1;
+    stable var claimsEntries : [(Text, Types.Claim)] = [];
+    stable var retryQueueEntries : [(Text, (Nat, Int))] = []; // (claimId, (retryCount, nextAttempt))
+    
+    let claims = HashMap.HashMap<Text, Types.Claim>(0, T.equal, T.hash);
+    let retryQueue = HashMap.HashMap<Text, (Nat, Int)>(0, T.equal, T.hash);
 
     type ClaimResult = Result.Result<Text, Text>;
     type ClaimSubmission = {
@@ -98,11 +87,46 @@ actor ClaimSubmissionCanister {
 
     system func preupgrade() {
         claimsEntries := Iter.toArray(claims.entries());
+        retryQueueEntries := Iter.toArray(retryQueue.entries());
     };
 
     system func postupgrade() {
-        claims := HashMap.fromIter<Text, Claim>(claimsEntries.vals(), 0, Text.equal, Text.hash);
+        claims := HashMap.fromIter<Text, Types.Claim>(claimsEntries.vals(), 0, T.equal, T.hash);
+        retryQueue := HashMap.fromIter<Text, (Nat, Int)>(retryQueueEntries.vals(), 0, T.equal, T.hash);
         claimsEntries := [];
+        retryQueueEntries := [];
+    };
+
+    // Background task to retry failed operations
+    public func retryFailedOperations() : async () {
+        let now = Time.now();
+        for ((claimId, (count, nextAttempt)) in retryQueue.entries()) {
+            if (now >= nextAttempt) {
+                try {
+                    await processClaim(claimId);
+                    retryQueue.delete(claimId);
+                } catch (e) {
+                    let newCount = count + 1;
+                    if (newCount >= MAX_RETRIES) {
+                        // Mark claim as failed
+                        switch (claims.get(claimId)) {
+                            case (?claim) {
+                                claims.put(claimId, { claim with status = #Rejected });
+                            };
+                            case null {};
+                        };
+                        retryQueue.delete(claimId);
+                    } else {
+                        retryQueue.put(claimId, (newCount, now + RETRY_DELAY_NS));
+                    };
+                };
+            };
+        };
+    };
+
+    func processClaim(claimId : Text) : async () {
+        // Implementation would retry AI and Dispatch calls
+        // Update status and handle errors
     };
 
     // Submit a new claim with enhanced type handling
@@ -142,29 +166,50 @@ actor ClaimSubmissionCanister {
                 };
             };
 
-            // Generate unique ID
-            let claimId = generateId(caller);
-
-            // Calculate hash for files (stubbed for Motoko 0.9.8)
-            let fileHash = switch (validatedContent) {
-                case (#blob(b)) {
-                    // TODO: Implement SHA256 hashing for Motoko 0.9.8 or plug in a compatible library
-                    ?"placeholder_hash";
+            // Generate cryptographic ID
+            let claimId = await generateClaimId();
+            
+            // Get anonymous ID from UserAccountCanister
+            let anonymousId = await userAccountCanister.getAnonymousId();
+            
+            // Sanitize and store content
+            let (contentHash, text) = switch (submission.content) {
+                case (#text(t)) {
+                    let cleanText = sanitizeText(t);
+                    (null, ?cleanText)
                 };
-                case _ { null };
+                case (#blob(b)) {
+                    if (b.size() > MAX_BLOB_SIZE) {
+                        throw Error.reject("File exceeds size limit of " # Nat.toText(MAX_BLOB_SIZE) # " bytes");
+                    };
+                    let cid = await IPFS_Adapter.upload(b);
+                    (?cid, null)
+                };
+                case (#url(u)) {
+                    if (not isValidUrl(u)) {
+                        throw Error.reject("Invalid URL format");
+                    };
+                    (null, ?sanitizeText(u))
+                };
             };
 
             // Create claim object
-            let newClaim : Claim = {
+            let newClaim : Types.Claim = {
                 id = claimId;
-                userId = caller;
-                content = validatedContent;
+                submitter = caller;
+                anonymousSubmitterId = Option.get(anonymousId, "");
                 claimType = claimType;
-                context = submission.context;
-                source = submission.source;
-                timestamp = Time.now();
-                status = "submitted";
-                fileHash = fileHash;
+                text = text;
+                contentHash = contentHash;
+                sourceUrl = submission.source;
+                tags = [];
+                status = #Pending;
+                createdAt = Time.now();
+                updatedAt = Time.now();
+                assignedAletheians = [];
+                aiQuestions = null;
+                metadata = [];
+                retryCount = 0;
             };
 
             // Store claim
@@ -183,35 +228,44 @@ actor ClaimSubmissionCanister {
                 case _ {};
             };
 
-            // Initiate AI question generation
-            let claimForAI = {
-                id = claimId;
-                content = switch (validatedContent) {
-                    case (#text(t)) { t };
-                    case (#url(u)) { u };
-                    case (#blob(_)) { "Media file uploaded" };
+            // Store claim first to ensure we have it before downstream calls
+            claims.put(claimId, newClaim);
+            
+            // Async processing with error handling
+            try {
+                // Initiate AI question generation
+                let aiResult = await aiCanister.generateQuestions({
+                    id = claimId;
+                    content = switch (text) {
+                        case (?t) t;
+                        case null "Media file: " # Option.get(contentHash, "");
+                    };
+                    claimType = submission.claimType;
+                    source = submission.source;
+                    context = submission.context;
+                });
+                
+                // Update with AI results
+                let updatedClaim = {
+                    newClaim with
+                    aiQuestions = switch (aiResult) {
+                        case (#ok(q)) ?q.questions;
+                        case (#err(_)) null;
+                    };
+                    status = #Assigned;
+                    updatedAt = Time.now();
                 };
-                claimType = submission.claimType;
-                source = submission.source;
-                context = submission.context;
-            };
-            ignore await aiCanister.generateQuestions(claimForAI);
-            ignore await notificationCanister.sendNotification(caller, "Claim Received", "Claim received. Processing...", "claim_update");
+                claims.put(claimId, updatedClaim);
 
-            // Dispatch to Aletheians
-            let claimForDispatch = {
-                id = claimId;
-                content = switch (validatedContent) {
-                    case (#text(t)) { t };
-                    case (#url(u)) { u };
-                    case (#blob(_)) { "Media file" };
-                };
-                claimType = submission.claimType;
-                tags = [];
-                locationHint = null;
-                timestamp = Time.now();
-            };
-            let dispatchResult = await dispatchCanister.assignClaim(claimForDispatch);
+                // Dispatch to Aletheians
+                let dispatchResult = await dispatchCanister.assignClaim({
+                    id = claimId;
+                    content = Option.get(text, "");
+                    claimType = submission.claimType;
+                    tags = [];
+                    locationHint = null;
+                    timestamp = Time.now();
+                });
             switch (dispatchResult) {
                 case (#err(msg)) { throw Error.reject("Failed to dispatch claim: " # msg) };
                 case (#ok(_)) {};
@@ -242,12 +296,29 @@ actor ClaimSubmissionCanister {
         Principal.toText(userId) # "-" # random;
     };
 
+    // Robust input sanitization
+    func sanitizeText(input : Text) : Text {
+        let strippedHtml = T.replace(input, #regex("<[^>]*>"), "");
+        let normalized = T.map(strippedHtml, func (c : Char) {
+            if (Char.isWhitespace(c)) ' ' else c
+        });
+        let trimmed = T.trim(normalized, #char ' ');
+        T.slice(trimmed, 0, MAX_TEXT_LENGTH)
+    };
+
     func isValidUrl(url : Text) : Bool {
-        var found = false;
-        for (prefix in VALID_URL_PREFIXES.vals()) {
-            if (Text.startsWith(url, #text prefix)) { found := true };
-        };
-        found
+        let sanitized = T.trim(url, #char ' ');
+        if (T.size(sanitized) > 200) return false;
+        T.startsWith(sanitized, #text "http://") or T.startsWith(sanitized, #text "https://")
+    };
+
+    func generateClaimId() : async Text {
+        let random = await Random.blob();
+        let bytes = Blob.toArray(random);
+        let hashBytes = Array.tabulate<Nat8>(16, func(i) { 
+            if (i < bytes.size()) bytes[i] else 0 
+        });
+        Hex.encode(hashBytes)
     };
 
     // Get claim by ID (user can only access their own claims)
