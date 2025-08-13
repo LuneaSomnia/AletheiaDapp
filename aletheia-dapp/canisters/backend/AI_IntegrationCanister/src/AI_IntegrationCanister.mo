@@ -264,7 +264,6 @@ actor AI_IntegrationCanister {
             priority = 1;
         }]
     };
-    };
 
     // AI Module 3: Blockchain Duplicate Detection
     public shared func findDuplicates(claim : Claim) : async Result.Result<[Text], Text> {

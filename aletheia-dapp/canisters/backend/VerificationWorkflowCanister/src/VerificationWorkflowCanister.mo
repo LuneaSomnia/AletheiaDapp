@@ -238,6 +238,7 @@ actor VerificationWorkflowCanister {
                                     case (#err(e)) {};
                                 };
                             };
+                        };
                     };
                 };
             };
