@@ -309,8 +309,6 @@ actor ClaimSubmissionCanister {
         if (T.size(sanitized) > 200) return false;
         T.startsWith(sanitized, #text "http://") or T.startsWith(sanitized, #text "https://")
     };
-
-    func generateClaimId() : async Text {
         let random = await Random.blob();
         let bytes = Blob.toArray(random);
         let hashBytes = Array.tabulate<Nat8>(16, func(i) { 
