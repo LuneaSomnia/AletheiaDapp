@@ -12,6 +12,7 @@ import Option "mo:base/Option";
 // import JSON "mo:json/JSON"; // TODO: Provide or implement a JSON library compatible with your Motoko version
 // import Http "mo:http/Http"; // TODO: Provide or implement an HTTP library compatible with your Motoko version
 import ExperimentalCycles "mo:base/ExperimentalCycles";
+import Async "mo:base/Async";
 
 actor AI_IntegrationCanister {
     // Import common types
@@ -32,9 +33,9 @@ actor AI_IntegrationCanister {
     stable var rateLimitState = HashMap.HashMap<Principal, (Nat, Int)>(0, Principal.equal, Principal.hash);
     stable var sensitiveNames : [Text] = [];
     
-    // Rate limiting state
-    var nonStableCache = cache;
-    var nonStableRateLimit = rateLimitState;
+    // Non-stable references to stable storage
+    var nonStableCache = HashMap.fromIter<Text, (Text, Int)>(cache.entries(), 0, T.equal, T.hash);
+    var nonStableRateLimit = HashMap.fromIter<Principal, (Nat, Int)>(rateLimitState.entries(), 0, Principal.equal, Principal.hash);
 
     type ResearchResult = {
         sourceUrl : Text;
@@ -260,8 +261,8 @@ actor AI_IntegrationCanister {
                 case (#Error(code, msg, transient)) {
                     lastError := code # ": " # msg;
                     if (not transient) break;
-                    let delayMs = BASE_BACKOFF_MS * (2 ** attempts);
-                    await Async.sleep(delayMs);
+                    let delayNs = BASE_BACKOFF_MS * (2 ** attempts) * 1_000_000;
+                    await Async.sleep(delayNs);
                 };
             };
         };
@@ -270,13 +271,25 @@ actor AI_IntegrationCanister {
 
     // Helper functions
     func generateFingerprint(req : Types.AIAdapterRequest) : Text {
-        // Simple fingerprint - TODO: Replace with proper hashing
-        T.concat(req.requestType, T.concat(req.claimId, req.text))
+        // Simple deterministic fingerprint - TODO: Replace with cryptographic hash
+        let base = req.requestType # "|" # req.claimId # "|" # req.text;
+        let hash = Array.foldLeft<Nat8, Nat>(Blob.toArray(Text.encodeUtf8(base)), 0, func(acc, byte) { acc * 256 + Nat.byteToNat(byte) });
+        Nat.toText(hash)
     };
 
     func checkRateLimit(principal : Principal) : Result.Result<(), Text> {
-        // Implementation would check rateLimitState
-        #ok(())
+        let now = Time.now() / 1_000_000_000; // Convert to seconds
+        let (count, windowStart) = Option.get(nonStableRateLimit.get(principal), (0, 0));
+        
+        if (now - windowStart > 60) { // New time window
+            nonStableRateLimit.put(principal, (1, now));
+            #ok(())
+        } else if (count >= DEFAULT_RATE_LIMIT) {
+            #err("RateLimitExceeded")
+        } else {
+            nonStableRateLimit.put(principal, (count + 1, windowStart));
+            #ok(())
+        }
     };
 
     func parseQuestions(response : Text) : [Types.Question] {
