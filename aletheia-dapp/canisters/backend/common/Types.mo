@@ -58,4 +58,91 @@ module {
     };
 
     public type VerifierId = Principal;
+
+    // AI Integration Types
+    public type ClaimMeta = {
+        mediaType : Text;
+        sourceUrl : ?Text;
+        ipfsHash : ?Text;
+        submittedBy : Principal;
+        submittedAt : Int;
+    };
+
+    public type Question = { 
+        questionText : Text; 
+        rationale : Text; 
+        priority: Nat8 
+    };
+    
+    public type ResultOkQuestions = { 
+        questions : [Question] 
+    };
+
+    public type ResearchSource = { 
+        url: Text; 
+        title: Text; 
+        summary: Text; 
+        credibilityScore: Nat8; 
+        snippet: Text 
+    };
+    
+    public type ResultOkResearch = { 
+        sources : [ResearchSource]; 
+        summary : Text; 
+        confidence: Nat8 
+    };
+
+    public type AletheianSubmission = { 
+        aletheianId : Text; 
+        verdict : Text; 
+        rationale : Text; 
+        evidenceHashes: [Text] 
+    };
+    
+    public type ResultOkSynthesis = { 
+        verdict : Text; 
+        abstract : Text; 
+        evidenceSummary : [Text]; 
+        confidence: Nat8 
+    };
+
+    public type DuplicateMatch = { 
+        claimId: Text; 
+        similarityPct: Nat8; 
+        snippet: Text; 
+        evidencePointer: ?Text 
+    };
+    
+    public type SourceScore = { 
+        url: Text; 
+        score: Nat8; 
+        reason: Text 
+    };
+
+    // AI Adapter Types
+    public type AIAdapterRequest = {
+        requestType: Text;
+        claimId: Text;
+        text: Text;
+        meta: ClaimMeta;
+        redactionApplied: Bool;
+        maxSources: ?Nat;
+        threshold: ?Nat;
+        style: ?Text;
+    };
+
+    public type AIAdapterResponse = {
+        #Success: Text;  // JSON string of response
+        #Error: (code: Text, message: Text, transient: Bool);
+    };
+
+    public type AIAdapterEmbeddingResponse = {
+        #Success: [Float];
+        #Error: Text;
+    };
+
+    public type AIAdapterFetchResponse = {
+        #Success: Text;
+        #Error: Text;
+    };
 };

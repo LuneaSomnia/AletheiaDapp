@@ -1,7 +1,14 @@
 service AI_IntegrationCanister : {
-  generateQuestions: (text, text) -> (vec record { question: text; explanation: text; });
-  retrieveInformation: (text, text) -> (vec record { source: text; url: text; credibilityScore: float; summary: text; });
-  synthesizeReport: (text, vec record { verdict: text; explanation: text; }, vec record { source: text; url: text; credibilityScore: float; summary: text; }) -> (record { verdict: text; explanation: text; evidenceHighlights: vec text; });
-  getQuestions: (text) -> (opt vec record { question: text; explanation: text; }) query;
-  getResearch: (text) -> (opt vec record { source: text; url: text; credibilityScore: float; summary: text; }) query;
+  // Core AI Gateway API
+  generateQuestionMirror : (text, text, Types.ClaimMeta) -> (Result.Result<Types.ResultOkQuestions, text>);
+  researchClaim : (text, text, nat) -> (Result.Result<Types.ResultOkResearch, text>);
+  synthesizeVerdict : (text, vec Types.AletheianSubmission, text) -> (Result.Result<Types.ResultOkSynthesis, text>);
+  detectDuplicate : (text, nat) -> (Result.Result<vec Types.DuplicateMatch, text>);
+  scoreSource : (text) -> (Result.Result<Types.SourceScore, text>);
+  healthCheck : () -> (text) query;
+  
+  // Admin & Monitoring
+  setAdapterPrincipal : (principal) -> (Result.Result<(), text>);
+  setRateLimit : (principal, nat) -> (Result.Result<(), text>);
+  getStats : () -> (nat, nat) query;
 }
