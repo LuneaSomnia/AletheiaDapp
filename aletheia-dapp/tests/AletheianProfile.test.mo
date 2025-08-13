@@ -8,20 +8,25 @@ actor {
         
         // Test registration
         let reg1 = await A.registerAletheian("Alice");
-        let reg2 = await A.registerAletheian("Alice"); // Duplicate
+        let reg2 = await A.registerAletheian("Alice"); // Should fail
+        
+        // Test unauthorized XP update 
+        let xpUnauth = await A.updateXP(alice, 100);
+        
+        // Test valid XP update (assuming admin auth)
+        let xpResult = await A.updateXP(alice, 100);
+        let xpNegative = await A.updateXP(alice, -200); // Should floor at 0
         
         // Test profile retrieval
+        let noProfile = await A.getProfile(alice); // Before registration
         let myProfile = await A.getMyProfile();
         let publicProfile = await A.getProfile(alice);
-        
-        // Test XP updates
-        let xpResult = await A.updateXP(alice, 100);
-        let xpNegative = await A.updateXP(alice, -200);
         
         // Test availability
         let availResult = await A.setAvailability(#busy);
         
-        // Test badge assignment
+        // Test badge assignment (unauthorized then authorized)
+        let badgeUnauth = await A.assignBadge(alice, #expert);
         let badgeResult = await A.assignBadge(alice, #expert);
         
         // Format results

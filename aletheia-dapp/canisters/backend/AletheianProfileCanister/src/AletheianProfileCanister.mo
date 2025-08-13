@@ -71,11 +71,12 @@ actor AletheianProfileCanister {
         availability : Availability;
         createdAt : Int;
         lastActive : Int;
-        // Historical tracking
         warnings : Nat;
         claimsVerified : Nat;
         accuracy : Float;
     };
+
+    // Remove old profile type and storage
 
     public type PublicAletheianProfile = {
         displayName : Text;
@@ -92,23 +93,8 @@ actor AletheianProfileCanister {
         testResults : [Nat];  // Scores from vetting tests
     };
 
-    // Stable storage for upgrades
+    // Consolidated profile storage
     stable var profilesEntries : [(Principal, AletheianProfile)] = [];
-    stable var requestsEntries : [(Principal, RegistrationRequest)] = [];
-    stable var trainingModules : [Text] = [
-        "critical-thinking-101",
-        "bias-identification",
-        "craap-model",
-        "aletheia-guidelines"
-    ];
-
-    var profiles = HashMap.HashMap<Principal, AletheianProfile>(
-        0, Principal.equal, Principal.hash
-    );
-    
-    var registrationRequests = HashMap.HashMap<Principal, RegistrationRequest>(
-        0, Principal.equal, Principal.hash
-    );
 
     // Rank thresholds based on XP
     let RANK_THRESHOLDS = [
@@ -204,89 +190,6 @@ actor AletheianProfileCanister {
         }
     };
     
-    /// Step 1: Submit registration request with test results
-    public shared ({ caller }) func submitRegistration(
-        location : ?Text, 
-        testResults : [Nat]
-    ) : async Result.Result<Text, Text> {
-        if (profiles.get(caller) != null) {
-            return #err("You're already registered as an Aletheian");
-        };
-        
-        if (registrationRequests.get(caller) != null) {
-            return #err("Registration request already pending");
-        };
-        
-        // Basic vetting: Must pass all training modules
-        if (testResults.size() != trainingModules.size()) {
-            return #err("Invalid test results format");
-        };
-        
-        for (score in testResults.vals()) {
-            if (score < 80) { // 80% passing score
-                return #err("Vetting failed: Insufficient test scores");
-            };
-        };
-        
-        let request : RegistrationRequest = {
-            principal = caller;
-            location = location;
-            testResults = testResults;
-        };
-        
-        registrationRequests.put(caller, request);
-        #ok("Registration request submitted. Awaiting approval.");
-    };
-    
-    /// Step 2: Admin approves registration (to be called by admin)
-    public shared ({ caller }) func approveRegistration(
-        applicant : Principal
-    ) : async Result.Result<Text, Text> {
-        // In real implementation, add admin check here
-        switch (registrationRequests.get(applicant)) {
-            case null { #err("No registration request found") };
-            case (?request) {
-                // Create initial profile
-                let newProfile : AletheianProfile = {
-                    id = applicant;
-                    rank = #Trainee;
-                    xp = 0;
-                    expertiseBadges = [];
-                    location = request.location;
-                    status = #Active;
-                    warnings = 0;
-                    accuracy = 100.0; // Starting accuracy
-                    claimsVerified = 0;
-                    completedTraining = trainingModules; // Auto-complete required training
-                    createdAt = Time.now();
-                    lastActive = Time.now();
-                };
-                
-                // Award XP for completed training
-                var totalXp = 0;
-                for (trainingmodule in trainingModules.vals()) {
-                    switch (Array.find(TRAINING_XP, func ((m, x) : (Text, Nat)) : Bool = m == trainingmodule)) {
-                        case (?(_, xp)) { totalXp += xp };
-                        case null {};
-                    };
-                };
-                
-                let updatedProfile = updateXp(newProfile, totalXp);
-                profiles.put(applicant, updatedProfile);
-                registrationRequests.delete(applicant);
-                
-                // Send welcome notification
-                ignore await notification.sendNotification(
-                    applicant,
-                    "Welcome to Aletheia",
-                    "Your Aletheian registration has been approved! You can now start verifying claims.",
-                    "registration_approved"
-                );
-                
-                #ok("Aletheian approved and onboarded successfully");
-            };
-        };
-    };
     
     // ======================
     // XP Management
@@ -294,13 +197,19 @@ actor AletheianProfileCanister {
     
     public shared({ caller }) func updateXP(target : Principal, delta : Int) : async Result.Result<Nat, Text> {
         // Authorization check
-        if (caller != controller and caller != Principal.fromActor(ReputationLogicCanister)) {
+        if (caller != controller and caller != Principal.fromActor(reputationLogic)) {
             return #err("NotAuthorized");
         };
         
         switch(aletheians.get(target)) {
             case (?profile) {
-                let newXP = Int.max(0, profile.xp + delta);
+                let currentXP = profile.xp;
+                let newXP = if (delta < 0) {
+                    Int.max(0, currentXP - Int.abs(delta))
+                } else {
+                    currentXP + delta
+                };
+                
                 let updated = { profile with 
                     xp = newXP;
                     lastActive = Time.now();
