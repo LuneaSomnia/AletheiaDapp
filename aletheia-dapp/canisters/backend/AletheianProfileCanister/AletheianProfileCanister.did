@@ -1,9 +1,37 @@
 service : {
-  createProfile: (username: opt text) -> (result);
-  getProfile: () -> (result) query;
-  updateProfile: (username: opt text) -> (result);
-  updateXP: (xpDelta: int) -> (result);
-  addBadge: (badge: text) -> (result);
+  // Registration & Profile
+  registerAletheian: (text) -> (variant { ok; err: text });
+  getMyProfile: () -> (opt AletheianProfile) query;
+  getProfile: (principal) -> (opt PublicAletheianProfile) query;
+  setAvailability: (Availability) -> (variant { ok; err: text });
+  
+  // XP Management
+  updateXP: (principal, int) -> (variant { ok: nat; err: text });
+  
+  // Admin Functions
+  assignBadge: (principal, Badge) -> (variant { ok; err: text });
+  setController: (principal) -> ();
 }
 
-type result = variant { ok; err: text };
+type Availability = variant { available; busy };
+type Badge = variant { expert; veteran; moderator };
+type AletheianProfile = record {
+  id: principal;
+  displayName: text;
+  xp: nat;
+  badges: vec Badge;
+  availability: Availability;
+  createdAt: int;
+  lastActive: int;
+  warnings: nat;
+  claimsVerified: nat;
+  accuracy: float;
+};
+type PublicAletheianProfile = record {
+  displayName: text;
+  xp: nat;
+  badges: vec Badge;
+  availability: Availability;
+  claimsVerified: nat;
+  accuracy: float;
+};

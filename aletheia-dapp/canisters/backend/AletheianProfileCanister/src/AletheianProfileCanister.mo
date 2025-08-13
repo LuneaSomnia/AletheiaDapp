@@ -48,28 +48,42 @@ import Types "../common/Types";
     };
 
 actor AletheianProfileCanister {
-    type Rank = {
-        #Trainee;
-        #Junior;
-        #Associate;
-        #Senior;
-        #Expert;
-        #Master;
+    let controller : Principal = Principal.fromText("aaaaa-aa"); // Set to management canister by default
+    
+    // Stable storage updates
+    stable var registeredAletheians : [(Principal, AletheianProfile)] = [];
+    
+    // Updated storage with versioning
+    var aletheians = HashMap.HashMap<Principal, AletheianProfile>(
+        0, Principal.equal, Principal.hash
+    );
+    // Data versioning
+    stable var dataVersion : Nat = 1;
+    
+    public type Availability = { #available; #busy };
+    public type Badge = { #expert; #veteran; #moderator };
+    
+    public type AletheianProfile = {
+        id : Principal;
+        displayName : Text;
+        xp : Nat;
+        badges : [Badge];
+        availability : Availability;
+        createdAt : Int;
+        lastActive : Int;
+        // Historical tracking
+        warnings : Nat;
+        claimsVerified : Nat;
+        accuracy : Float;
     };
 
-    type AletheianProfile = {
-        id : Principal;
-        rank : Rank;
-        xp : Int;  // Experience points
-        expertiseBadges : [Text];  // e.g., ["Health", "Deepfake Analysis"]
-        location : ?Text;  // Optional geo-location
-        status : { #Active; #Suspended; #Retired };
-        warnings : Nat;  // Number of warnings received
-        accuracy : Float;  // Historical accuracy percentage
-        claimsVerified : Nat;  // Total claims verified
-        completedTraining : [Text];  // IDs of completed training modules
-        createdAt : Int;  // Timestamp
-        lastActive : Int;  // Timestamp
+    public type PublicAletheianProfile = {
+        displayName : Text;
+        xp : Nat;
+        badges : [Badge];
+        availability : Availability;
+        claimsVerified : Nat;
+        accuracy : Float;
     };
 
     type RegistrationRequest = {
@@ -115,24 +129,80 @@ actor AletheianProfileCanister {
 
     // System initialization
     system func preupgrade() {
-        profilesEntries := Iter.toArray(profiles.entries());
-        requestsEntries := Iter.toArray(registrationRequests.entries());
+        registeredAletheians := Iter.toArray(aletheians.entries());
+        dataVersion := 2; // Bump version on upgrade
     };
 
     system func postupgrade() {
-        profiles := HashMap.fromIter<Principal, AletheianProfile>(
-            profilesEntries.vals(), 0, Principal.equal, Principal.hash
+        aletheians := HashMap.fromIter<Principal, AletheianProfile>(
+            registeredAletheians.vals(), 0, Principal.equal, Principal.hash
         );
-        registrationRequests := HashMap.fromIter<Principal, RegistrationRequest>(
-            requestsEntries.vals(), 0, Principal.equal, Principal.hash
-        );
-        profilesEntries := [];
-        requestsEntries := [];
+        registeredAletheians := [];
     };
 
     // ======================
-    // Onboarding & Vetting
+    // Registration & Core Functions
     // ======================
+    
+    public shared({ caller }) func registerAletheian(displayName : Text) : async Result.Result<(), Text> {
+        if (Principal.isAnonymous(caller)) {
+            return #err("Anonymous principal cannot register");
+        };
+        
+        switch(aletheians.get(caller)) {
+            case (?_) { #err("AlreadyRegistered") };
+            case null {
+                let newProfile : AletheianProfile = {
+                    id = caller;
+                    displayName;
+                    xp = 0;
+                    badges = [];
+                    availability = #available;
+                    createdAt = Time.now();
+                    lastActive = Time.now();
+                    warnings = 0;
+                    claimsVerified = 0;
+                    accuracy = 100.0;
+                };
+                aletheians.put(caller, newProfile);
+                #ok()
+            }
+        }
+    };
+    
+    public shared({ caller }) func getMyProfile() : async ?AletheianProfile {
+        aletheians.get(caller)
+    };
+    
+    public query func getProfile(target : Principal) : async ?PublicAletheianProfile {
+        switch(aletheians.get(target)) {
+            case (?profile) {
+                ?{
+                    displayName = profile.displayName;
+                    xp = profile.xp;
+                    badges = profile.badges;
+                    availability = profile.availability;
+                    claimsVerified = profile.claimsVerified;
+                    accuracy = profile.accuracy;
+                }
+            };
+            case null { null }
+        }
+    };
+    
+    public shared({ caller }) func setAvailability(status : Availability) : async Result.Result<(), Text> {
+        switch(aletheians.get(caller)) {
+            case (?profile) {
+                let updated = { profile with 
+                    availability = status;
+                    lastActive = Time.now();
+                };
+                aletheians.put(caller, updated);
+                #ok()
+            };
+            case null { #err("ProfileNotFound") }
+        }
+    };
     
     /// Step 1: Submit registration request with test results
     public shared ({ caller }) func submitRegistration(
@@ -219,8 +289,28 @@ actor AletheianProfileCanister {
     };
     
     // ======================
-    // Reputation & XP System
+    // XP Management
     // ======================
+    
+    public shared({ caller }) func updateXP(target : Principal, delta : Int) : async Result.Result<Nat, Text> {
+        // Authorization check
+        if (caller != controller and caller != Principal.fromActor(ReputationLogicCanister)) {
+            return #err("NotAuthorized");
+        };
+        
+        switch(aletheians.get(target)) {
+            case (?profile) {
+                let newXP = Int.max(0, profile.xp + delta);
+                let updated = { profile with 
+                    xp = newXP;
+                    lastActive = Time.now();
+                };
+                aletheians.put(target, updated);
+                #ok(newXP)
+            };
+            case null { #err("ProfileNotFound") }
+        }
+    };
     
     /// Update XP and automatically adjust rank
     func updateXp(profile : AletheianProfile, xpChange : Int) : AletheianProfile {
@@ -320,8 +410,32 @@ actor AletheianProfileCanister {
     };
     
     // ======================
-    // Badge Management
+    // Badge Management & Admin
     // ======================
+    
+    public shared({ caller }) func assignBadge(target : Principal, badge : Badge) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("NotAuthorized");
+        };
+        
+        switch(aletheians.get(target)) {
+            case (?profile) {
+                let badges = Array.filter(profile.badges, func(b : Badge) { b != badge });
+                let updated = { profile with 
+                    badges = Array.append(badges, [badge]);
+                    lastActive = Time.now();
+                };
+                aletheians.put(target, updated);
+                #ok()
+            };
+            case null { #err("ProfileNotFound") }
+        }
+    };
+    
+    public shared({ caller }) func setController(newController : Principal) : async () {
+        assert(caller == controller);
+        controller := newController;
+    };
     
     // Custom function to compare ranks
    func rankIsHigher(rank1: Rank, rank2: Rank): Bool {
