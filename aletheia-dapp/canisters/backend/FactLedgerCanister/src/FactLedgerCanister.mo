@@ -11,16 +11,24 @@ import Text "mo:base/Text";
 import Buffer "mo:base/Buffer";
 
 actor FactLedgerCanister {
-    public type FactId = Nat;
+    // --- Configuration and Permissions ---
+    private stable var controller : Principal = Principal.fromText("aaaaa-aa"); // Initial placeholder
+    private stable var authorizedCallers : [(Principal, Bool)] = [];
+    private stable var dataVersion : Nat = 1;
     
-    public type FactStatus = {
-        #PendingReview;
-        #Verified;
-        #Disputed;
-        #Deprecated;
+    // --- Core Data Types ---
+    public type FactEntry = {
+        claimId : Text;
+        version : Nat;
+        timestamp : Int;
+        verdict : Bool;
+        evidenceHashes : [Text];
+        aletheianIds : [Text];
     };
 
-    public type ClaimClassification = {
+    // Temporary storage for claim text matching (stub implementation)
+    private stable var claimTextEntries : [(Text, Text)] = [];
+    private var claimTextMap = HashMap.HashMap<Text, Text>(1, Text.equal, Text.hash);
         // Factual Accuracy Verdicts
         #True;
         #MostlyTrue;
@@ -100,77 +108,122 @@ actor FactLedgerCanister {
     };
 
     // Stable variables for canister upgrades
-    stable var nextId : FactId = 1;
-    stable var factsEntries : [(FactId, Fact)] = [];
-    stable var versionHistory : [(FactId, [FactId])] = [];
-
-    // In-memory storage
-    private var facts = HashMap.HashMap<FactId, Fact>(
+    // --- Versioned Fact History Storage ---
+    stable var factHistoryEntries : [(Text, [FactEntry])] = [];
+    private var factHistory = HashMap.HashMap<Text, [FactEntry]>(1, Text.equal, Text.hash);
+    
+    // --- Authorized Callers Storage ---
+    private var authCallers = HashMap.fromIter<Principal, Bool>(
+        authorizedCallers.vals(), 
         0, 
-        Nat.equal, 
-        Hash.hash
-    );
-
-    private var factVersions = HashMap.HashMap<FactId, [FactId]>(
-        0,
-        Nat.equal,
-        Hash.hash
+        Principal.equal, 
+        Principal.hash
     );
 
     // System initialization after upgrade
     system func preupgrade() {
-        factsEntries := Iter.toArray(facts.entries());
-        versionHistory := Iter.toArray(factVersions.entries());
+        factHistoryEntries := Iter.toArray(factHistory.entries());
+        authorizedCallers := Iter.toArray(authCallers.entries());
+        claimTextEntries := Iter.toArray(claimTextMap.entries());
     };
 
     system func postupgrade() {
-        facts := HashMap.fromIter<FactId, Fact>(
-            factsEntries.vals(), 
+        factHistory := HashMap.fromIter<Text, [FactEntry]>(
+            factHistoryEntries.vals(), 
+            1, 
+            Text.equal, 
+            Text.hash
+        );
+        authCallers := HashMap.fromIter<Principal, Bool>(
+            authorizedCallers.vals(), 
             0, 
-            Nat.equal, 
-            Hash.hash
+            Principal.equal, 
+            Principal.hash
         );
-        factVersions := HashMap.fromIter<FactId, [FactId]>(
-            versionHistory.vals(),
-            0,
-            Nat.equal,
-            Hash.hash
+        claimTextMap := HashMap.fromIter<Text, Text>(
+            claimTextEntries.vals(),
+            1,
+            Text.equal,
+            Text.hash
         );
-        factsEntries := [];
-        versionHistory := [];
+        factHistoryEntries := [];
+        authorizedCallers := [];
+        claimTextEntries := [];
     };
 
-    // Add a new fact to the ledger
-    public shared (msg) func addFact(request : AddFactRequest) : async Result.Result<Fact, Text> {
-        let currentTime = Time.now();
-        let newId = nextId;
+    // --- Admin Functions ---
+    public shared (msg) func authorizeCaller(principal: Principal) : async () {
+        assert msg.caller == controller;
+        authCallers.put(principal, true);
+    };
 
-        let newFact : Fact = {
-            id = newId;
-            content = request.content;
-            status = #PendingReview;
-            claimClassification = null;
-            evidence = request.evidence;
-            verdicts = [];
-            version = {
-                version = 1;
-                previousVersion = null;
-                timestamp = currentTime;
-            };
-            publicProof = request.publicProof;
-            created = currentTime;
-            lastUpdated = currentTime;
+    public shared (msg) func revokeCaller(principal: Principal) : async () {
+        assert msg.caller == controller;
+        authCallers.delete(principal);
+    };
+
+    // --- Core API ---
+    public shared (msg) func appendVersion(
+        claimId: Text,
+        verdict: Bool,
+        evidenceHashes: [Text],
+        aletheianIds: [Text]
+    ) : async Result.Result<FactEntry, Text> {
+        // Authorization check
+        if (not authCallers.get(msg.caller)) {
+            return #err("Unauthorized caller");
         };
 
-        facts.put(newId, newFact);
-        factVersions.put(newId, [newId]);
-        nextId += 1;
+        let currentTime = Time.now();
+        let existingEntries = Option.get(factHistory.get(claimId), []);
+        let newVersion = existingEntries.size() + 1;
 
-        #ok(newFact)
+        let newEntry : FactEntry = {
+            claimId = claimId;
+            version = newVersion;
+            timestamp = currentTime;
+            verdict = verdict;
+            evidenceHashes = evidenceHashes;
+            aletheianIds = aletheianIds;
+        };
+
+        factHistory.put(claimId, Array.append(existingEntries, [newEntry]));
+        #ok(newEntry)
     };
 
-    // Create a new version of an existing fact
-    public shared (msg) func updateFact(request : UpdateFactRequest) : async Result.Result<Fact, Text> {
+    public shared (msg) func storeOriginalClaimText(claimId: Text, text: Text) : async Result.Result<(), Text> {
+        // Authorization check
+        if (not authCallers.get(msg.caller)) {
+            return #err("Unauthorized caller");
+        };
+
+        if (claimTextMap.get(claimId) != null) {
+            return #err("Claim text already stored");
+        };
+
+        claimTextMap.put(claimId, text);
+        #ok(())
+    };
+
+    // --- Query API ---
+    public query func queryByClaimText(queryText: Text) : async [Text] {
+        let matches = Buffer.Buffer<Text>(0);
+        for ((id, text) in claimTextMap.entries()) {
+            if (Text.contains(text, #text queryText)) {
+                matches.add(id);
+            }
+        };
+        Buffer.toArray(matches)
+    };
+
+    public query func readFullHistory(claimId: Text) : async ?[FactEntry] {
+        factHistory.get(claimId)
+    };
+
+    // --- Maintenance API ---
+    public query func getDataVersion() : async Nat {
+        dataVersion
+    };
         switch (facts.get(request.id)) {
             case (null) { #err("Fact not found") };
             case (?currentFact) {
@@ -236,45 +289,4 @@ actor FactLedgerCanister {
         }
     };
 
-    public query func getFactsByStatus(status : FactStatus) : async [Fact] {
-        Iter.toArray(
-            Iter.filter(
-                facts.vals(),
-                func(fact : Fact) : Bool { fact.status == status }
-            )
-        )
-    };
-
-    public query func getFactsByClassification(classification : ClaimClassification) : async [Fact] {
-        Iter.toArray(
-            Iter.filter(
-                facts.vals(),
-                func(fact : Fact) : Bool {
-                    switch (fact.claimClassification) {
-                        case (?cc) { cc == classification };
-                        case null { false };
-                    }
-                }
-            )
-        )
-    };
-
-    // Additional helper methods
-    public query func getFactCount() : async Nat {
-        facts.size()
-    };
-
-    public query func getLatestVersion(id : FactId) : async ?Fact {
-        switch (factVersions.get(id)) {
-            case (null) { null };
-            case (?versions) {
-                let lastIndex = versions.size() - 1;
-                if (lastIndex >= 0) {
-                    facts.get(versions[lastIndex])
-                } else {
-                    null
-                }
-            };
-        }
-    };
 };
