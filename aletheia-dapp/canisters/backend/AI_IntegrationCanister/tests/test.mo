@@ -32,6 +32,8 @@ await AI.setAdapterPrincipal(Principal.fromActor(MockAdapter));
 let (redacted, applied) = AI.redactTextForPII("test@example.com 1234567");
 assert applied == true;
 assert T.contains(redacted, #text "[REDACTED]");
+assert applied == true;
+assert T.contains(redacted, #text "[REDACTED]");
 
 // Test question generation
 let result = await AI.generateQuestionMirror("test1", "Test claim", testClaimMeta);

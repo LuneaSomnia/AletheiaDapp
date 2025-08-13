@@ -37,60 +37,6 @@ actor AI_IntegrationCanister {
     var nonStableCache = HashMap.fromIter<Text, (Text, Int)>(cache.entries(), 0, T.equal, T.hash);
     var nonStableRateLimit = HashMap.fromIter<Principal, (Nat, Int)>(rateLimitState.entries(), 0, Principal.equal, Principal.hash);
 
-    type ResearchResult = {
-        sourceUrl : Text;
-        sourceName : Text;
-        credibilityScore : Float;
-        summary : Text;
-    };
-
-    type Finding = {
-        aletheianId : Principal;
-        classification : Text;
-        explanation : Text;
-        evidence : [Text];
-    };
-
-    type Report = {
-        verdict : Text;
-        explanation : Text;
-        evidence : [Text];
-    };
-
-    type QuestionSet = {
-        claimId : Text;
-        questions : [Text];
-        explanations : [Text];
-    };
-
-    type MediaAnalysis = {
-        isDeepfake : Bool;
-        confidence : Float;
-        analysis : Text;
-    };
-
-    type AIFeedback = {
-        aimodule : Text;  // "question", "research", "synthesis", "deepfake"
-        claimId : Text;
-        rating : Nat;   // 1-5 scale
-        comments : Text;
-    };
-
-    // Canister references
-    let factLedgerCanister = actor ("FactLedgerCanister") : actor {
-        getAllFacts : () -> async [{
-            id : Nat;
-            content : Text;
-            status : { #PendingReview; #Verified; #Disputed; #Deprecated };
-            claimClassification : ?{ #True; #False; #MisleadingContext; #Unsubstantiated };
-            evidence : [{ hash : Text; storageType : Text; url : ?Text; timestamp : Int; provider : Principal }];
-            verdicts : [{ classification : { #True; #False; #MisleadingContext; #Unsubstantiated }; timestamp : Int; verifier : Principal; explanation : Text }];
-            version : { version : Nat; previousVersion : ?Nat; timestamp : Int };
-            publicProof : { proofType : Text; content : Text };
-            created : Int;
-            lastUpdated : Int;
-        }];
-    };
 
     // Stable storage for AI configurations
     stable var questionModelVersion : Text = "gpt-4-turbo";
@@ -213,14 +159,19 @@ actor AI_IntegrationCanister {
         var modified = original;
         var redacted = false;
         
-        // Simple email redaction
-        let emailPattern = "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b";
-        modified := T.replace(modified, #text emailPattern, "[REDACTED]");
-        redacted := redacted or (modified != original);
+        // Simple email redaction (Motoko doesn't support regex - use contains)
+        let parts = T.split(modified, #text "@");
+        if (T.contains(modified, #text "@")) {
+            modified := "[REDACTED]";
+            redacted := true;
+        };
         
-        // Phone/credit card-like numbers
-        let digitPattern = "\\d{7,}";
-        modified := T.replace(modified, #text digitPattern, "[REDACTED]");
+        // Simple number redaction
+        let digitsOnly = T.replace(modified, #char func (c) { not Char.isDigit(c) }, "");
+        if (digitsOnly.size() >= 7) {
+            modified := T.replace(modified, #text digitsOnly, "[REDACTED]");
+            redacted := true;
+        };
         redacted := redacted or (modified != original);
         
         // Sensitive names
@@ -269,12 +220,21 @@ actor AI_IntegrationCanister {
         #err(lastError)
     };
 
+    // Stable storage handling
+    system func preupgrade() {
+        cache := HashMap.toIter(nonStableCache);
+        rateLimitState := HashMap.toIter(nonStableRateLimit);
+    };
+
+    system func postupgrade() {
+        nonStableCache := HashMap.fromIter<Text, (Text, Int)>(cache.entries(), 0, T.equal, T.hash);
+        nonStableRateLimit := HashMap.fromIter<Principal, (Nat, Int)>(rateLimitState.entries(), 0, Principal.equal, Principal.hash);
+    };
+
     // Helper functions
-    func generateFingerprint(req : Types.AIAdapterRequest) : Text {
-        // Simple deterministic fingerprint - TODO: Replace with cryptographic hash
+        // Simple deterministic fingerprint using text hash
         let base = req.requestType # "|" # req.claimId # "|" # req.text;
-        let hash = Array.foldLeft<Nat8, Nat>(Blob.toArray(Text.encodeUtf8(base)), 0, func(acc, byte) { acc * 256 + Nat.byteToNat(byte) });
-        Nat.toText(hash)
+        Text.hash(base) // TODO: Replace with proper cryptographic hash
     };
 
     func checkRateLimit(principal : Principal) : Result.Result<(), Text> {
@@ -300,34 +260,6 @@ actor AI_IntegrationCanister {
             priority = 1;
         }]
     };
-        try {
-            let prompt = "Generate 2-3 critical thinking questions to evaluate the veracity of this claim. "
-                # "For each question, provide a brief explanation of why it's important. "
-                # "Claim: \"" # claim.content # "\". "
-                # "Format response as JSON: { \"questions\": [{\"question\": \"text\", \"explanation\": \"text\"}] }";
-
-            switch (await _callAI(prompt, "question")) {
-                case (#ok(response)) {
-                    let parsed = _parseQuestionResponse(response);
-                    #ok({
-                        claimId = claim.id;
-                        questions = parsed.questions;
-                        explanations = parsed.explanations;
-                    });
-                };
-                case (#err(msg)) {
-                    // Fallback to local implementation
-                    let questions = await _generateQuestions(claim.content);
-                    #ok({
-                        claimId = claim.id;
-                        questions = questions;
-                        explanations = _generateQuestionExplanations(claim.content, questions);
-                    })
-                };
-            };
-        } catch (e) {
-            #err("Question generation failed: " # Error.message(e));
-        }
     };
 
     // AI Module 3: Blockchain Duplicate Detection

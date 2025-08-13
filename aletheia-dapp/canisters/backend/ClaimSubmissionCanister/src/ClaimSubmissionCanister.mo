@@ -27,9 +27,6 @@ actor ClaimSubmissionCanister {
     stable var claimsEntries : [(Text, Types.Claim)] = [];
     stable var retryQueueEntries : [(Text, (Nat, Int))] = []; // (claimId, (retryCount, nextAttempt))
     
-    let claims = HashMap.HashMap<Text, Types.Claim>(0, T.equal, T.hash);
-    let retryQueue = HashMap.HashMap<Text, (Nat, Int)>(0, T.equal, T.hash);
-
     type ClaimResult = Result.Result<Text, Text>;
     type ClaimSubmission = {
         content : { #text : Text; #blob : Blob; #url : Text };
@@ -37,7 +34,6 @@ actor ClaimSubmissionCanister {
         context : ?Text;
         source : ?Text;
     };
-    var claims = HashMap.HashMap<Text, Claim>(0, Text.equal, Text.hash);
 
     // Configuration
     let MAX_TEXT_LENGTH = 5000; // 5000 characters
