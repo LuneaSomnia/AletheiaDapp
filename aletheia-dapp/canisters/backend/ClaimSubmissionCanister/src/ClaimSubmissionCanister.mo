@@ -22,7 +22,7 @@ actor ClaimSubmissionCanister {
     let MAX_RETRIES = 3;
     let RETRY_DELAY_NS = 300_000_000_000; // 5 minutes in nanoseconds
     
-    // Stable storage with versioning
+    // Stable storage
     stable var dataVersion : Nat = 1;
     stable var claimsEntries : [(Text, Types.Claim)] = [];
     stable var retryQueueEntries : [(Text, (Nat, Int))] = []; // (claimId, (retryCount, nextAttempt))
@@ -32,14 +32,11 @@ actor ClaimSubmissionCanister {
 
     type ClaimResult = Result.Result<Text, Text>;
     type ClaimSubmission = {
-        content : ClaimContent;
+        content : { #text : Text; #blob : Blob; #url : Text };
         claimType : Text;
         context : ?Text;
         source : ?Text;
     };
-
-    // Stable storage
-    stable var claimsEntries : [(Text, Claim)] = [];
     var claims = HashMap.HashMap<Text, Claim>(0, Text.equal, Text.hash);
 
     // Configuration
@@ -133,14 +130,14 @@ actor ClaimSubmissionCanister {
     public shared ({caller}) func submitClaim(submission : ClaimSubmission) : async ClaimResult {
         try {
             // Validate claim type with proper switch syntax
-            let claimType = switch (submission.claimType) {
-                case "text" { #text };
-                case "image" { #image };
-                case "video" { #video };
-                case "audio" { #audio };
-                case "articleLink" { #articleLink };
-                case "fakeNewsUrl" { #fakeNewsUrl };
-                case "other" { #other };
+            let claimType : Types.ClaimType = switch (submission.claimType) {
+                case "text" #Text;
+                case "image" #Image;
+                case "video" #Video;
+                case "audio" #Audio;
+                case "url" #URL;
+                case "fakeSite" #FakeSite;
+                case "other" #Other("");
                 case (_) { throw Error.reject("Invalid claim type") };
             };
 
@@ -219,8 +216,9 @@ actor ClaimSubmissionCanister {
             switch (validatedContent) {
                 case (#blob(b)) {
                     switch (fileHash) {
-                        case (?hash) {
-                            ignore await storageCanister.storeBlob(hash, b);
+                        case (?cid) {
+                            // Store to IPFS
+                            ignore await IPFS_Adapter.upload(b);
                         };
                         case null {};
                     };
@@ -291,9 +289,13 @@ actor ClaimSubmissionCanister {
     };
 
     // Helper functions
-    func generateId(userId : Principal) : Text {
-        let random = Int.toText(Time.now() % 1_000_000);
-        Principal.toText(userId) # "-" # random;
+    func generateClaimId() : async Text {
+        let random = await Random.blob();
+        let bytes = Blob.toArray(random);
+        let hashBytes = Array.tabulate<Nat8>(16, func(i) { 
+            if (i < bytes.size()) bytes[i] else 0 
+        });
+        Hex.encode(hashBytes)
     };
 
     // Robust input sanitization
@@ -322,7 +324,7 @@ actor ClaimSubmissionCanister {
     };
 
     // Get claim by ID (user can only access their own claims)
-    public shared query ({caller}) func getClaim(claimId : Text) : async Result.Result<Claim, Text> {
+    public shared query ({caller}) func getClaim(claimId : Text) : async Result.Result<Types.Claim, Text> {
         switch (claims.get(claimId)) {
             case (?claim) {
                 if (claim.userId != caller) {
