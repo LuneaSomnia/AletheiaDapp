@@ -17,40 +17,21 @@ actor FactLedgerCanister {
     private stable var dataVersion : Nat = 1;
     
     // --- Core Data Types ---
+    public type ClaimId = Text;
+    public type AnonymousId = Text;
+    
     public type FactEntry = {
-        claimId : Text;
+        claimId : ClaimId;
         version : Nat;
         timestamp : Int;
         verdict : Bool;
         evidenceHashes : [Text];
-        aletheianIds : [Text];
+        aletheianIds : [AnonymousId];
     };
 
     // Temporary storage for claim text matching (stub implementation)
-    private stable var claimTextEntries : [(Text, Text)] = [];
-    private var claimTextMap = HashMap.HashMap<Text, Text>(1, Text.equal, Text.hash);
-        // Factual Accuracy Verdicts
-        #True;
-        #MostlyTrue;
-        #HalfTruth;
-        #MisleadingContext;
-        #False;
-        #MostlyFalse;
-        #Unsubstantiated;
-        #Outdated;
-        // Intent/Origin/Style Classifications
-        #Misinformation;
-        #Disinformation;
-        #Satire;
-        #Opinion;
-        #Propaganda;
-        #FabricatedContent;
-        #ImposterContent;
-        #ManipulatedContent;
-        #Deepfake;
-        #ConspiracyTheory;
-        // Other classifications can be added here
-    };
+    private stable var claimTextEntries : [(ClaimId, Text)] = [];
+    private var claimTextMap = HashMap.HashMap<ClaimId, Text>(1, Text.equal, Text.hash);
 
     public type Evidence = {
         hash : Text;          // Content hash (IPFS CID or similar)
@@ -109,13 +90,14 @@ actor FactLedgerCanister {
 
     // Stable variables for canister upgrades
     // --- Versioned Fact History Storage ---
-    stable var factHistoryEntries : [(Text, [FactEntry])] = [];
-    private var factHistory = HashMap.HashMap<Text, [FactEntry]>(1, Text.equal, Text.hash);
+    stable var factHistoryEntries : [(ClaimId, [FactEntry])] = [];
+    private var factHistory = HashMap.HashMap<ClaimId, [FactEntry]>(1, Text.equal, Text.hash);
     
     // --- Authorized Callers Storage ---
+    private stable var authorizedCallers : [(Principal, Bool)] = [];
     private var authCallers = HashMap.fromIter<Principal, Bool>(
         authorizedCallers.vals(), 
-        0, 
+        1, 
         Principal.equal, 
         Principal.hash
     );
@@ -223,44 +205,6 @@ actor FactLedgerCanister {
     // --- Maintenance API ---
     public query func getDataVersion() : async Nat {
         dataVersion
-    };
-        switch (facts.get(request.id)) {
-            case (null) { #err("Fact not found") };
-            case (?currentFact) {
-                let currentTime = Time.now();
-                let newId = nextId;
-
-                // Create new version of the fact
-                let updatedFact : Fact = {
-                    id = newId;
-                    content = request.newContent;
-                    status = request.newStatus;
-                    claimClassification = request.newClaimClassification;
-                    evidence = request.newEvidence;
-                    verdicts = request.newVerdicts;
-                    version = {
-                        version = currentFact.version.version + 1;
-                        previousVersion = ?currentFact.id;
-                        timestamp = currentTime;
-                    };
-                    publicProof = request.newPublicProof;
-                    created = currentFact.created;
-                    lastUpdated = currentTime;
-                };
-
-                // Update storage
-                facts.put(newId, updatedFact);
-                
-                // Update version history
-                let currentHistory = Option.get(factVersions.get(request.id), [request.id]);
-                let newHistory = Array.append(currentHistory, [newId]);
-                factVersions.put(request.id, newHistory);
-                
-                nextId += 1;
-
-                #ok(updatedFact)
-            };
-        }
     };
 
     // Query methods

@@ -1,20 +1,35 @@
 service : {
-  storeFact: (
+  // Admin functions
+  authorizeCaller : (principal: principal) -> ();
+  revokeCaller : (principal: principal) -> ();
+  getDataVersion : () -> (nat) query;
+  
+  // Core API
+  appendVersion : (
     claimId: text,
-    claim: text,
-    verdict: verdict,
-    explanation: text,
-    evidence: vec record {
-      sourceUrl: text;
-      contentHash: text;
-      credibilityScore: nat;
-    },
-    aletheians: vec principal
+    verdict: bool,
+    evidenceHashes: vec text,
+    aletheianIds: vec text
   ) -> (result);
-  getFact: (claimId: text) -> (opt factRecord) query;
-  getClaimHistory: (claimId: text) -> (vec factRecord) query;
-  searchClaims: (query: text) -> (vec factRecord) query;
+  storeOriginalClaimText : (claimId: text, text: text) -> (result);
+  queryByClaimText : (queryText: text) -> (vec text) query;
+  readFullHistory : (claimId: text) -> (opt vec FactEntry) query;
+  
+  // Maintenance
+  preupgrade : () -> ();
+  postupgrade : () -> ();
 }
+
+type FactEntry = record {
+  claimId: text;
+  version: nat;
+  timestamp: int;
+  verdict: bool;
+  evidenceHashes: vec text;
+  aletheianIds: vec text;
+};
+
+type result = variant { ok; err: text };
 
 type result = variant { ok; err: text };
 
