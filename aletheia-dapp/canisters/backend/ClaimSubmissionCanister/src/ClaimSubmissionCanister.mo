@@ -309,13 +309,6 @@ actor ClaimSubmissionCanister {
         if (T.size(sanitized) > 200) return false;
         T.startsWith(sanitized, #text "http://") or T.startsWith(sanitized, #text "https://")
     };
-        let random = await Random.blob();
-        let bytes = Blob.toArray(random);
-        let hashBytes = Array.tabulate<Nat8>(16, func(i) { 
-            if (i < bytes.size()) bytes[i] else 0 
-        });
-        Hex.encode(hashBytes)
-    };
 
     // Get claim by ID (user can only access their own claims)
     public shared query ({caller}) func getClaim(claimId : Text) : async Result.Result<Types.Claim, Text> {
