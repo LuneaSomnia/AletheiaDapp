@@ -13,32 +13,55 @@ import Text "mo:base/Text";
 
 // Minimal stubs for Types and Utils to allow compilation
 actor class NotificationCanister(initialAdmins: [Principal]) = this {
-    // Minimal type stubs
-    type Notification = {
-        id : Nat;
-        userId : Principal;
+    // Notification types
+    public type NotificationChannel = { #InApp; #Push; #Email; #Webhook };
+    public type NotificationPriority = { #Low; #Normal; #High; #Urgent };
+    public type NotificationStatus = { #Pending; #Sent; #Failed; #Acked };
+
+    public type NotificationPayload = {
+        id : Text;
+        to : Principal;
         title : Text;
         body : Text;
-        timestamp : Int;
-        read : Bool;
-        notificationType : Text;
+        meta : [(Text, Text)]; // Key-value pairs for metadata
+        channels : [NotificationChannel];
+        priority : NotificationPriority;
+        createdAt : Int;
     };
-    type UserSettings = {
-        inApp : Bool;
-        push : Bool;
-        email : Bool;
-        pushTokens : [Text];
-        disabledTypes : [Text];
-    };
-    type NotificationType = Text;
-    type NotificationPreference = Text;
 
-    // All stable and var declarations must come before any functions in Motoko
-    stable var nextNotificationId: Nat = 0;
-    stable var stableNotifications: [Notification] = [];
-    stable var stableUserSettings: [(Principal, UserSettings)] = [];
-    stable var stablePendingPush: [Notification] = [];
-    stable var stableAllowedCanisters: [Principal] = [];
+    public type NotificationRecord = {
+        payload : NotificationPayload;
+        status : NotificationStatus;
+        attempts : Nat;
+        lastAttemptAt : ?Int;
+    };
+
+    public type NotificationPreferences = {
+        channels : [NotificationChannel];
+        rateLimit : Nat; // Max notifications per hour
+    };
+
+    // Stable storage
+    stable var controller : Principal = initialAdmins[0];
+    stable var dataVersion : Nat = 1;
+    stable var authorizedCanisters : [(Principal, Bool)] = [];
+    stable var notificationQueue : [(Text, NotificationRecord)] = [];
+    stable var notificationHistory : [(Principal, [Text])] = [];
+    stable var pushTokens : [(Principal, [Text])] = [];
+    stable var webhookEndpoints : [(Principal, [Text])] = [];
+    stable var lastSentTimestamps : [(Principal, Int)] = [];
+    stable var maxAttempts : Nat = 3;
+    stable var offchainAdapterPrincipal : ?Principal = null;
+    stable var recentHashes : [(Principal, [(Text, Int)])] = []; // For deduplication
+
+    // Mutable state
+    let notifications = TrieMap.TrieMap<Text, NotificationRecord>(Text.equal, Text.hash);
+    let authorizedCanistersMap = TrieMap.TrieMap<Principal, Bool>(Principal.equal, Principal.hash);
+    let userPushTokens = TrieMap.TrieMap<Principal, [Text]>(Principal.equal, Principal.hash);
+    let userWebhooks = TrieMap.TrieMap<Principal, [Text]>(Principal.equal, Principal.hash);
+    let userHistory = TrieMap.TrieMap<Principal, [Text]>(Principal.equal, Principal.hash);
+    let rateLimits = TrieMap.TrieMap<Principal, Int>(Principal.equal, Principal.hash);
+    let dedupHashes = TrieMap.TrieMap<Principal, TrieMap.TrieMap<Text, Int>>(Principal.equal, Principal.hash);
 
     var notifications = TrieMap.TrieMap<Nat, Notification>(Nat.equal, Hash.hash);
     var userSettings = TrieMap.TrieMap<Principal, UserSettings>(Principal.equal, Principal.hash);
@@ -48,35 +71,38 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
 
     // Initialize from stable state
     system func postupgrade() {
-        // Convert stableNotifications to iterator of (Nat, Notification)
-        let notifIter = stableNotifications.vals();
-        let notifTuples = object {
-            var i = 0;
-            public func next() : ?(Nat, Notification) {
-                switch (notifIter.next()) {
-                    case null null;
-                    case (?n) {
-                        let idx = i;
-                        i += 1;
-                        ?(idx, n)
-                    }
-                }
-            }
+        authorizedCanistersMap := TrieMap.fromEntries<Principal, Bool>(
+            authorizedCanisters.vals(), Principal.equal, Principal.hash
+        );
+        
+        notifications := TrieMap.fromEntries<Text, NotificationRecord>(
+            notificationQueue.vals(), Text.equal, Text.hash
+        );
+        
+        userPushTokens := TrieMap.fromEntries<Principal, [Text]>(
+            pushTokens.vals(), Principal.equal, Principal.hash
+        );
+        
+        userWebhooks := TrieMap.fromEntries<Principal, [Text]>(
+            webhookEndpoints.vals(), Principal.equal, Principal.hash
+        );
+        
+        userHistory := TrieMap.fromEntries<Principal, [Text]>(
+            notificationHistory.vals(), Principal.equal, Principal.hash
+        );
+        
+        rateLimits := TrieMap.fromEntries<Principal, Int>(
+            lastSentTimestamps.vals(), Principal.equal, Principal.hash
+        );
+        
+        // Rebuild deduplication hashes
+        for ((user, hashes) in recentHashes.vals()) {
+            let userMap = TrieMap.TrieMap<Text, Int>(Text.equal, Text.hash);
+            for ((hash, ts) in hashes.vals()) {
+                userMap.put(hash, ts);
+            };
+            dedupHashes.put(user, userMap);
         };
-        notifications := TrieMap.fromEntries<Nat, Notification>(notifTuples, Nat.equal, Hash.hash);
-
-        // Convert stableUserSettings to iterator of (Principal, UserSettings)
-        let userIter = stableUserSettings.vals();
-        let userTuples = object {
-            public func next() : ?(Principal, UserSettings) {
-                userIter.next()
-            }
-        };
-        userSettings := TrieMap.fromEntries<Principal, UserSettings>(userTuples, Principal.equal, Principal.hash);
-
-        pendingPush := Buffer.fromArray<Notification>(stablePendingPush);
-        allowedCanisters := Buffer.fromArray<Principal>(stableAllowedCanisters);
-        admins := Buffer.fromArray<Principal>(initialAdmins);
     };
 
     system func preupgrade() {
@@ -103,7 +129,35 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
     };
 
     // ===== ADMIN MANAGEMENT =====
-    public shared({ caller }) func addAdmin(newAdmin: Principal) : async () {
+    public shared({ caller }) func authorizeCanister(canisterId: Principal) : async Result.Result<(), Text> {
+        assertController(caller);
+        authorizedCanistersMap.put(canisterId, true);
+        #ok(())
+    };
+    
+    public shared({ caller }) func revokeCanister(canisterId: Principal) : async Result.Result<(), Text> {
+        assertController(caller);
+        authorizedCanistersMap.delete(canisterId);
+        #ok(())
+    };
+    
+    public shared({ caller }) func setOffchainAdapter(adapter: Principal) : async Result.Result<(), Text> {
+        assertController(caller);
+        offchainAdapterPrincipal := ?adapter;
+        #ok(())
+    };
+    
+    public shared({ caller }) func setMaxAttempts(n: Nat) : async Result.Result<(), Text> {
+        assertController(caller);
+        maxAttempts := n;
+        #ok(())
+    };
+    
+    func assertController(caller: Principal) {
+        if (caller != controller) {
+            throw Error.reject("Unauthorized: Controller only");
+        };
+    };
         switch (validateCaller(caller)) {
             case (?err) { throw Error.reject(err) };
             case null {};
@@ -266,12 +320,68 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
     };
 
     // ===== NOTIFICATION CORE =====
-    public shared({ caller }) func sendNotification(
-        userId: Principal,
-        title: Text,
-        body: Text,
-        notifType: NotificationType
-    ) : async Nat {
+    public shared({ caller }) func enqueueNotification(
+        payload : NotificationPayload
+    ) : async Result.Result<Text, Text> {
+        // Authorization check
+        if (not isAuthorized(caller) and caller != payload.to) {
+            return #err("Unauthorized");
+        };
+        
+        // Rate limiting
+        switch (checkRateLimit(payload.to)) {
+            case (#err(msg)) return #err(msg);
+            case _ {};
+        };
+        
+        // Deduplication check
+        switch (checkDuplicate(payload)) {
+            case (#err(msg)) return #err(msg);
+            case _ {};
+        };
+        
+        // Get user preferences from UserAccountCanister
+        let userPrefs = await getUserPreferences(payload.to);
+        let allowedChannels = intersectChannels(payload.channels, userPrefs.channels);
+        
+        if (allowedChannels.size() == 0) {
+            return #err("No allowed channels");
+        };
+        
+        // Generate ID if missing
+        let id = if (payload.id == "") {
+            generateNotificationId(payload.to, payload.createdAt)
+        } else {
+            payload.id
+        };
+        
+        // Create record
+        let record : NotificationRecord = {
+            payload = payload;
+            status = #Pending;
+            attempts = 0;
+            lastAttemptAt = null;
+        };
+        
+        // Store in queue
+        notifications.put(id, record);
+        
+        // Update history
+        addToUserHistory(payload.to, id);
+        
+        #ok(id)
+    };
+    
+    func getUserPreferences(user : Principal) : async NotificationPreferences {
+        // TODO: Implement actual call to UserAccountCanister
+        { channels = [#InApp, #Push, #Email, #Webhook], rateLimit = 10 }
+    };
+    
+    func generateNotificationId(user : Principal, createdAt : Int) : Text {
+        let prefix = Principal.toText(user);
+        let hash = SHA256.fromBlob(Text.encodeUtf8(prefix # Int.toText(createdAt)));
+        CRC32.toText(CRC32.fromArray(hash))
+    };
         // Authorization check
         if (not isAllowedCanister(caller) and not isAdmin(caller)) {
             throw Error.reject("Unauthorized: Only allowed canisters can send notifications");
@@ -448,7 +558,70 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
         };
     };
 
-    // Utility functions must be at the end of the actor class in Motoko 0.9.8
+    // Rate limiting and deduplication
+    func checkRateLimit(user : Principal) : Result.Result<(), Text> {
+        let now = Time.now();
+        let window = 3600_000_000_000; // 1 hour in nanoseconds
+        switch (rateLimits.get(user)) {
+            case (?lastTime) {
+                if (now - lastTime < window) {
+                    #err("Rate limit exceeded")
+                } else {
+                    rateLimits.put(user, now);
+                    #ok(())
+                }
+            };
+            case null {
+                rateLimits.put(user, now);
+                #ok(())
+            };
+        }
+    };
+    
+    func checkDuplicate(payload : NotificationPayload) : Result.Result<(), Text> {
+        let hash = generateContentHash(payload);
+        let now = Time.now();
+        let window = 300_000_000_000; // 5 minutes
+        
+        switch (dedupHashes.get(payload.to)) {
+            case (?userHashes) {
+                switch (userHashes.get(hash)) {
+                    case (?timestamp) {
+                        if (now - timestamp < window) {
+                            #err("Duplicate notification")
+                        } else {
+                            userHashes.put(hash, now);
+                            #ok(())
+                        }
+                    };
+                    case null {
+                        userHashes.put(hash, now);
+                        #ok(())
+                    };
+                }
+            };
+            case null {
+                let userHashes = TrieMap.TrieMap<Text, Int>(Text.equal, Text.hash);
+                userHashes.put(hash, now);
+                dedupHashes.put(payload.to, userHashes);
+                #ok(())
+            };
+        }
+    };
+    
+    func generateContentHash(payload : NotificationPayload) : Text {
+        let content = payload.title # payload.body # debug_show(payload.meta);
+        let hash = SHA256.fromBlob(Text.encodeUtf8(content));
+        CRC32.toText(CRC32.fromArray(hash))
+    };
+    
+    func intersectChannels(requested : [NotificationChannel], allowed : [NotificationChannel]) : [NotificationChannel] {
+        Array.filter<NotificationChannel>(requested, func(c) {
+            Array.find<NotificationChannel>(allowed, func(a) { a == c }) != null
+        })
+    };
+    
+    // Utility functions
     func contains<T>(buf : Buffer.Buffer<T>, value : T, eq : (T, T) -> Bool) : Bool {
         for (v in buf.vals()) {
             if (eq(v, value)) return true;
