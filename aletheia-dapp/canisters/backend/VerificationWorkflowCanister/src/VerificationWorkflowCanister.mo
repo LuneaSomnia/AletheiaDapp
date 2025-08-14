@@ -122,36 +122,6 @@ actor VerificationWorkflowCanister {
     };
     
     // ======== CANISTER REFERENCES ========
-    let factLedger = actor ("FactLedgerCanister") : actor {
-        getFact : (id : Nat) -> async ?{
-            id : Nat;
-            content : Text;
-            status : { #PendingReview; #Verified; #Disputed; #Deprecated };
-            claimClassification : ?{ #True; #False; #MisleadingContext; #Unsubstantiated };
-            evidence : [{ hash : Text; storageType : Text; url : ?Text; timestamp : Int; provider : Principal }];
-            verdicts : [{ classification : { #True; #False; #MisleadingContext; #Unsubstantiated }; timestamp : Int; verifier : Principal; explanation : Text }];
-            version : { version : Nat; previousVersion : ?Nat; timestamp : Int };
-            publicProof : { proofType : Text; content : Text };
-            created : Int;
-            lastUpdated : Int;
-        };
-        addFact : (request : {
-            content : Text;
-            evidence : [{ hash : Text; storageType : Text; url : ?Text; timestamp : Int; provider : Principal }];
-            publicProof : { proofType : Text; content : Text };
-        }) -> async Result.Result<{
-            id : Nat;
-            content : Text;
-            status : { #PendingReview; #Verified; #Disputed; #Deprecated };
-            claimClassification : ?{ #True; #False; #MisleadingContext; #Unsubstantiated };
-            evidence : [{ hash : Text; storageType : Text; url : ?Text; timestamp : Int; provider : Principal }];
-            verdicts : [{ classification : { #True; #False; #MisleadingContext; #Unsubstantiated }; timestamp : Int; verifier : Principal; explanation : Text }];
-            version : { version : Nat; previousVersion : ?Nat; timestamp : Int };
-            publicProof : { proofType : Text; content : Text };
-            created : Int;
-            lastUpdated : Int;
-        }, Text>;
-    };
 
     let aletheianProfile = actor ("AletheianProfileCanister") : actor {
         getProfile : (aletheian : Principal) -> async ?{
