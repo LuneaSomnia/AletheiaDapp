@@ -35,12 +35,51 @@ actor VerificationWorkflowCanister {
         createdAt : Int;
     };
     
-    // ======== STABLE STORAGE ========
-    stable var tasksEntries : [(ClaimId, VerificationTask)] = [];
-    stable var nextTaskId : Nat = 1;
+    // ======== HELPER FUNCTIONS ========
+    func isController(caller: Principal) : Bool {
+        caller == controller
+    };
 
-    // ======== STATE ========
-    let tasks = TrieMap.TrieMap<ClaimId, VerificationTask>(Text.equal, Text.hash);
+    func isAuthorized(caller: Principal) : Bool {
+        isController(caller) or Option.isSome(authorizedCanisters.get(caller))
+    };
+
+    func isAssignedAletheian(claimId: ClaimId, caller: Principal) : Bool {
+        switch(workflows.get(claimId)) {
+            case (?entry) { Array.find<Principal>(entry.assigned, func(p) { p == caller }) != null };
+            case null { false }
+        }
+    };
+
+    func updateWorkflowHistory(claimId: ClaimId, message: Text) : () {
+        switch(workflows.get(claimId)) {
+            case (?entry) {
+                let newHistory = Array.append(entry.history, [Time.toText(Time.now()) # " - " # message]);
+                let updatedEntry = { entry with 
+                    history = newHistory;
+                    lastUpdatedAt = Time.now();
+                };
+                workflows.put(claimId, updatedEntry);
+            };
+            case null {};
+        };
+    };
+
+    // ======== SYSTEM FUNCTIONS ========
+    system func preupgrade() {
+        workflowsEntries := Iter.toArray(workflows.entries());
+        authorizedCanistersEntries := Iter.toArray(authorizedCanisters.entries());
+    };
+
+    system func postupgrade() {
+        workflows := TrieMap.fromEntries<ClaimId, Types.WorkflowEntry>(workflowsEntries.vals(), Text.equal, Text.hash);
+        authorizedCanisters := HashMap.fromIter<Principal, Bool>(authorizedCanistersEntries.vals(), 1, Principal.equal, Principal.hash);
+        
+        if (dataVersion < INITIAL_DATA_VERSION) {
+            // Future migration logic here
+            dataVersion := INITIAL_DATA_VERSION;
+        };
+    };
     
     // ======== CANISTER REFERENCES ========
     let factLedger = actor ("FactLedgerCanister") : actor {
@@ -212,36 +251,128 @@ actor VerificationWorkflowCanister {
         }
     };
 
-    // ======== CORE LOGIC ========
-    // Check for consensus among Aletheians
-    func checkConsensus(claimId : ClaimId) : async () {
-        switch (tasks.get(claimId)) {
-            case null { /* Task not found, ignore */ };
-            case (?task) {
-                // Check for duplicate claims first
-                switch (await detectDuplicate(claimId, task)) {
-                    case (#ok(originalId, verdict, explanation, evidence)) {
-                        // Duplicate detected and handled
-                        let _ = await finalizeTask(claimId, verdict, explanation, evidence, true);
+    // ======== CONSENSUS LOGIC ========
+    func checkConsensus(claimId: ClaimId) : async () {
+        switch(workflows.get(claimId)) {
+            case (?entry) {
+                if (entry.submissions.size() < 3) return;
+
+                // Group submissions by verdict
+                let verdictCounts = HashMap.HashMap<Text, Nat>(3, Text.equal, Text.hash);
+                let allEvidence = Buffer.Buffer<Text>(0);
+                
+                for ((_, submission) in entry.submissions.vals()) {
+                    let verdictText = debug_show(submission.verdict);
+                    verdictCounts.put(verdictText, Option.get(verdictCounts.get(verdictText), 0) + 1);
+                    allEvidence.append(submission.evidence);
+                };
+
+                // Check for consensus (>=2 matching verdicts)
+                var finalVerdict : ?Text = null;
+                for ((verdict, count) in verdictCounts.entries()) {
+                    if (count >= 2) {
+                        finalVerdict := ?verdict;
                     };
-                    case (#err _) {
-                        // Not a duplicate, proceed with consensus
-                        switch (calculateConsensus(task.findings)) {
-                            case (#ok(verdict, explanation, evidence)) {
-                                let _ = await finalizeTask(claimId, verdict, explanation, evidence, false);
-                            };
-                            case (#err(reason)) {
-                                // Consensus not reached, escalate
-                                let escalationResult = await escalation.escalateClaim(claimId, task.findings);
-                                switch (escalationResult) {
-                                    case (#ok()) {};
-                                    case (#err(e)) {};
-                                };
-                            };
-                        };
+                };
+
+                switch(finalVerdict) {
+                    case (?v) {
+                        await finalizeConsensus(claimId, v, Buffer.toArray(allEvidence));
+                    };
+                    case null {
+                        await escalateClaim(claimId);
                     };
                 };
             };
+            case null {};
+        };
+    };
+
+    func finalizeConsensus(claimId: ClaimId, verdict: Text, evidence: [Text]) : async () {
+        var attempts = 0;
+        var success = false;
+        
+        while (attempts < MAX_RETRY_ATTEMPTS and not success) {
+            try {
+                // Record fact with retries
+                let result = await factLedger.recordFact(
+                    claimId,
+                    verdict,
+                    evidence,
+                    entry.assigned,
+                    "Consensus reached via verification workflow"
+                );
+                
+                switch(result) {
+                    case (#ok()) {
+                        success := true;
+                        // Update reputation
+                        let xpUpdates = Array.map<Principal, (Principal, Int)>(
+                            entry.assigned,
+                            func(p) { (p, 10) } // Base XP award
+                        );
+                        ignore await reputationLogic.applyBatchXP(xpUpdates);
+                        
+                        // Update workflow state
+                        let updatedEntry = { entry with
+                            state = #ConsensusReached;
+                            lastUpdatedAt = Time.now();
+                        };
+                        workflows.put(claimId, updatedEntry);
+                        updateWorkflowHistory(claimId, "Consensus reached: " # verdict);
+                    };
+                    case (#err(msg)) {
+                        attempts += 1;
+                        if (attempts < MAX_RETRY_ATTEMPTS) {
+                            await async { ignore await Timer.sleep(RETRY_DELAY) };
+                        };
+                    };
+                };
+            } catch (e) {
+                attempts += 1;
+                if (attempts < MAX_RETRY_ATTEMPTS) {
+                    await async { ignore await Timer.sleep(RETRY_DELAY) };
+                };
+            };
+        };
+
+        if (not success) {
+            let updatedEntry = { entry with
+                state = #ErrorPersisting;
+                lastUpdatedAt = Time.now();
+            };
+            workflows.put(claimId, updatedEntry);
+            updateWorkflowHistory(claimId, "Failed to persist consensus after " # Nat.toText(attempts) # " attempts");
+        };
+    };
+
+    func escalateClaim(claimId: ClaimId) : async () {
+        switch(workflows.get(claimId)) {
+            case (?entry) {
+                // Prepare escalation data
+                let submissionsData = Array.map<(Principal, Types.Submission), (Principal, Text, [Text], Text)>(
+                    entry.submissions,
+                    func((p, s)) { 
+                        (p, debug_show(s.verdict), s.evidence, s.notes) 
+                    }
+                );
+
+                // Call escalation canister
+                let result = await escalation.startEscalation(
+                    claimId,
+                    submissionsData,
+                    "Escalated due to lack of consensus"
+                );
+
+                // Update workflow state
+                let updatedEntry = { entry with
+                    state = #Escalated;
+                    lastUpdatedAt = Time.now();
+                };
+                workflows.put(claimId, updatedEntry);
+                updateWorkflowHistory(claimId, "Escalated to senior review");
+            };
+            case null {};
         };
     };
 
@@ -404,13 +535,118 @@ actor VerificationWorkflowCanister {
         }
     };
 
-    // ======== QUERY INTERFACE ========
-    public query func getTask(claimId : ClaimId) : async ?VerificationTask {
-        tasks.get(claimId)
+    // ======== ADMIN API ========
+    public shared ({ caller }) func markTimedOut(claimId: ClaimId, timedOutPrincipal: Principal) : async Result.Result<(), Text> {
+        if (not isAuthorized(caller)) {
+            return #err("Unauthorized");
+        };
+
+        switch(workflows.get(claimId)) {
+            case (?entry) {
+                // Get replacement
+                let replacementResult = await aletheianDispatch.reassignAletheian(claimId, timedOutPrincipal);
+                switch(replacementResult) {
+                    case (#ok(newAletheian)) {
+                        let newAssigned = Array.map<Principal, Principal>(
+                            entry.assigned,
+                            func(p) { if (p == timedOutPrincipal) newAletheian else p }
+                        );
+                        
+                        let updatedEntry = { entry with
+                            assigned = newAssigned;
+                            lastUpdatedAt = Time.now();
+                            attempts = entry.attempts + 1;
+                        };
+                        workflows.put(claimId, updatedEntry);
+                        
+                        updateWorkflowHistory(claimId, "Timed out: " # Principal.toText(timedOutPrincipal) 
+                            # " replaced by " # Principal.toText(newAletheian));
+                        
+                        // Notify new Aletheian
+                        ignore await notification.notifyAletheians(
+                            [newAletheian],
+                            "Reassigned to claim: " # claimId
+                        );
+                        #ok()
+                    };
+                    case (#err(msg)) {
+                        #err("Reassignment failed: " # msg)
+                    };
+                };
+            };
+            case null {
+                #err("Claim not found")
+            };
+        }
     };
 
-    public query func getActiveTasks() : async [VerificationTask] {
-        Iter.toArray(tasks.vals())
+    public shared ({ caller }) func forceFinalizeAsController(claimId: ClaimId, verdict: Text) : async Result.Result<(), Text> {
+        if (not isController(caller)) {
+            return #err("Controller only");
+        };
+
+        switch(workflows.get(claimId)) {
+            case (?entry) {
+                let updatedEntry = { entry with
+                    state = #ConsensusReached;
+                    lastUpdatedAt = Time.now();
+                };
+                workflows.put(claimId, updatedEntry);
+                updateWorkflowHistory(claimId, "Force finalized by controller with verdict: " # verdict);
+                #ok()
+            };
+            case null {
+                #err("Claim not found")
+            };
+        }
+    };
+
+    public shared ({ caller }) func reopenClaim(claimId: ClaimId) : async Result.Result<(), Text> {
+        if (not isController(caller)) {
+            return #err("Controller only");
+        };
+
+        switch(workflows.get(claimId)) {
+            case (?entry) {
+                let updatedEntry = { entry with
+                    state = #Reopened;
+                    lastUpdatedAt = Time.now();
+                    attempts = 0;
+                };
+                workflows.put(claimId, updatedEntry);
+                updateWorkflowHistory(claimId, "Reopened by controller");
+                #ok()
+            };
+            case null {
+                #err("Claim not found")
+            };
+        }
+    };
+
+    // ======== QUERY INTERFACE ========
+    public query func getWorkflowSummary(claimId: ClaimId) : async ?Types.WorkflowSummary {
+        switch(workflows.get(claimId)) {
+            case (?entry) {
+                ?{
+                    claimId = entry.claimId;
+                    state = entry.state;
+                    lastUpdatedAt = entry.lastUpdatedAt;
+                    submissionsCount = entry.submissions.size();
+                }
+            };
+            case null { null }
+        }
+    };
+
+    public query func getWorkflowForAdmin(claimId: ClaimId) : async ?Types.WorkflowEntry {
+        switch(workflows.get(claimId)) {
+            case (?entry) { ?entry };
+            case null { null }
+        }
+    };
+
+    public query func getAuthorizedCanisters() : async [Principal] {
+        Iter.toArray(authorizedCanisters.keys())
     };
 };
 

@@ -8,6 +8,44 @@ module {
         #FakeSite; 
         #Other : Text 
     };
+
+    public type Verdict = { 
+        #True; #MostlyTrue; #HalfTruth; #Misleading; #False; 
+        #Unsubstantiated; #Propaganda; #Satire; #InsufficientEvidence; 
+        #Deepfake; #Other: Text 
+    };
+
+    public type WorkflowState = { 
+        #Pending; #ConsensusReached; #Escalated; #TimedOut; 
+        #ErrorPersisting; #Reopened 
+    };
+
+    public type Submission = {
+        aletheian: Principal;
+        verdict: Verdict;
+        evidence: [Text];
+        notes: Text;
+        submittedAt: Int;
+    };
+
+    public type WorkflowEntry = {
+        claimId: Text;
+        assigned: [Principal];
+        submissions: [(Principal, Submission)];
+        state: WorkflowState;
+        createdAt: Int;
+        lastUpdatedAt: Int;
+        attempts: Nat;
+        dataVersion: Nat;
+        history: [Text];
+    };
+
+    public type WorkflowSummary = {
+        claimId: Text;
+        state: WorkflowState;
+        lastUpdatedAt: Int;
+        submissionsCount: Nat;
+    };
     
     public type ClaimStatus = {
         #Pending; 
