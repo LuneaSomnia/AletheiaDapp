@@ -175,24 +175,94 @@ actor VerificationWorkflowCanister {
         tasksEntries := [];
     };
 
-    // ======== API ========
-    // Create a new verification task
-    public shared ({ caller }) func createTask(claimId : ClaimId, aletheians : [AletheianId]) : async Result.Result<(), Text> {
-        if (aletheians.size() != 3) {
+    // ======== CORE API ========
+    public shared ({ caller }) func assignClaim(claimId: ClaimId, assigned: [Principal]) : async Result.Result<(), Text> {
+        // Authorization check
+        if (not isAuthorized(caller)) {
+            return #err("Unauthorized");
+        };
+
+        // Validate assignment
+        if (assigned.size() != 3) {
             return #err("Exactly 3 Aletheians must be assigned");
         };
 
-        let newTask : VerificationTask = {
-            claimId = claimId;
-            assignedAletheians = aletheians;
-            findings = [];
-            status = #assigned;
-            duplicateOf = null;
-            createdAt = Time.now();
+        let uniquePrincipals = Array.filter<Principal>(assigned, func(p, i) { 
+            Array.indexOf<Principal>(p, assigned, Principal.equal) == ?i 
+        });
+        if (uniquePrincipals.size() < 3) {
+            return #err("Duplicate Aletheians in assignment");
         };
 
-        tasks.put(claimId, newTask);
-        #ok(())
+        let newEntry : Types.WorkflowEntry = {
+            claimId = claimId;
+            assigned = assigned;
+            submissions = [];
+            state = #Pending;
+            createdAt = Time.now();
+            lastUpdatedAt = Time.now();
+            attempts = 0;
+            dataVersion = INITIAL_DATA_VERSION;
+            history = ["Claim assigned to: " # Principal.toText(assigned[0]) # ", " 
+                      # Principal.toText(assigned[1]) # ", " # Principal.toText(assigned[2])];
+        };
+
+        workflows.put(claimId, newEntry);
+        
+        // Notify assigned Aletheians
+        ignore await notification.notifyAletheians(
+            assigned, 
+            "New claim assigned: " # claimId
+        );
+
+        #ok()
+    };
+
+    public shared ({ caller }) func submitVerification(
+        claimId: ClaimId,
+        verdict: Types.Verdict,
+        evidence: [Text],
+        notes: Text
+    ) : async Result.Result<(), Text> {
+        // Authorization check
+        if (not isAssignedAletheian(claimId, caller) and not isController(caller)) {
+            return #err("Not assigned to this claim");
+        };
+
+        let submission : Types.Submission = {
+            aletheian = caller;
+            verdict = verdict;
+            evidence = evidence;
+            notes = notes;
+            submittedAt = Time.now();
+        };
+
+        switch(workflows.get(claimId)) {
+            case (?entry) {
+                // Update submissions map
+                let newSubmissions = Array.filter<(Principal, Types.Submission)>(
+                    entry.submissions, 
+                    func((p, _)) { p != caller }
+                );
+                let updatedSubmissions = Array.append(newSubmissions, [(caller, submission)]);
+                
+                let updatedEntry = { entry with
+                    submissions = updatedSubmissions;
+                    lastUpdatedAt = Time.now();
+                };
+                workflows.put(claimId, updatedEntry);
+
+                // Log to history
+                updateWorkflowHistory(claimId, "Submission by " # Principal.toText(caller) # ": " # debug_show(verdict));
+
+                // Check for consensus
+                await checkConsensus(claimId);
+                #ok()
+            };
+            case null {
+                #err("Claim not found")
+            };
+        }
     };
 
     // Submit a finding by an Aletheian
