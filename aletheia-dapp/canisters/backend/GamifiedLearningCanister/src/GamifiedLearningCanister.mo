@@ -894,5 +894,5 @@ actor class GamifiedLearningCanister(initialController : Principal) {
             if (eq(v, value)) return true;
         };
         false
-    }
-};
+    };
+
