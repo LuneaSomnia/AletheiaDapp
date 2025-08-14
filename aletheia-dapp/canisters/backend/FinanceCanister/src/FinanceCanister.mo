@@ -139,11 +139,26 @@ actor class FinanceCanister() = this {
     
     // Initialize from stable state
     system func preupgrade() {
+        // Save new storage structures
         payoutCyclesEntries := Iter.toArray(payoutCycles.entries());
         pendingBalancesEntries := Iter.toArray(pendingBalances.entries());
+        
+        // Migrate legacy storage
+        let earningsBuf = Buffer.Buffer<(Principal, Nat64)>(0);
+        for ((p, n) in Trie.iter(earnings)) {
+            earningsBuf.add((p, n));
+        };
+        earningsEntries := earningsBuf.toArray();
+        
+        let xpBuf = Buffer.Buffer<(Principal, Nat)>(0);
+        for ((p, n) in Trie.iter(monthlyXP)) {
+            xpBuf.add((p, n));
+        };
+        monthlyXPEntries := xpBuf.toArray();
     };
 
     system func postupgrade() {
+        // Restore new storage structures
         payoutCycles := HashMap.fromIter<Text, PayoutCycle>(
             payoutCyclesEntries.vals(), 0, Text.equal, Text.hash
         );
@@ -151,9 +166,18 @@ actor class FinanceCanister() = this {
             pendingBalancesEntries.vals(), 0, Principal.equal, Principal.hash
         );
         
-        // Data migration if needed
+        // Restore legacy storage
+        earnings := Trie.empty();
+        for ((p, n) in earningsEntries.vals()) {
+            earnings := Trie.put(earnings, key(p), Principal.equal, n : Nat64).0;
+        };
+        monthlyXP := Trie.empty();
+        for ((p, n) in monthlyXPEntries.vals()) {
+            monthlyXP := Trie.put(monthlyXP, key(p), Principal.equal, n : Nat).0;
+        };
+        
+        // Data migration
         if (dataVersion < 2) {
-            // Migrate from old storage format
             platformReserve := 0;
             carryoverPool := 0;
             dataVersion := 2;
@@ -354,19 +378,6 @@ actor class FinanceCanister() = this {
         (instructions, fee)
     };
         
-        // Reset monthly XP
-        monthlyXP := Trie.empty();
-        totalMonthlyXP := 0;
-        lastDistributionTime := Time.now();
-        
-        addTransaction(#distribution { 
-            amount = distributed; 
-            totalXP = totalMonthlyXP; 
-            timestamp = Time.now() 
-        });
-        
-        Debug.print("Distributed " # debug_show(distributed) # " to " # debug_show(recipientCount) # " users");
-    };
     
     // Payout distribution
     public shared({ caller }) func distributePayouts(periodId : Text) : async Result.Result<[PayoutInstruction], Text> {
@@ -549,23 +560,23 @@ actor class FinanceCanister() = this {
     };
     
     // Query functions
-    query func getRevenuePool() : async Nat64 {
+    public query func getRevenuePool() : async Nat64 {
         revenuePool;
     };
     
-    query func getUserEarnings(user : Principal) : async Nat64 {
+    public query func getUserEarnings(user : Principal) : async Nat64 {
         Option.get(Trie.get(earnings, key(user), Principal.equal), 0 : Nat64)
     };
     
-    query func getMonthlyXP(user : Principal) : async Nat {
+    public query func getMonthlyXP(user : Principal) : async Nat {
         Option.get(Trie.get(monthlyXP, key(user), Principal.equal), 0 : Nat)
     };
     
-    query func getTotalMonthlyXP() : async Nat {
+    public query func getTotalMonthlyXP() : async Nat {
         totalMonthlyXP;
     };
     
-    query func getTransactions(since : Int) : async [Transaction] {
+    public query func getTransactions(since : Int) : async [Transaction] {
         Array.filter(transactions, func (t : Transaction) : Bool {
             let ts = switch (t) {
                 case (#deposit d) d.timestamp;
@@ -576,11 +587,11 @@ actor class FinanceCanister() = this {
         });
     };
     
-    query func getConfig() : async Config {
+    public query func getConfig() : async Config {
         config;
     };
     
-    query func getAdmins() : async [Principal] {
+    public query func getAdmins() : async [Principal] {
         admins;
     };
     

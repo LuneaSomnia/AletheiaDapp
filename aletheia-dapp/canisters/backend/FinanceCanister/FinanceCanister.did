@@ -19,6 +19,13 @@ service : {
   getPendingBalance : (user : principal) -> (nat64) query;
   getPlatformReserve : () -> (nat64) query;
   getCarryoverPool : () -> (nat64) query;
+  getRevenuePool : () -> (nat64) query;
+  getUserEarnings : (user : principal) -> (nat64) query;
+  getMonthlyXP : (user : principal) -> (nat) query;
+  getTotalMonthlyXP : () -> (nat) query;
+  getTransactions : (since : int) -> (vec Transaction) query;
+  getConfig : () -> (Config) query;
+  getAdmins : () -> (vec principal) query;
 }
 
 type PayoutCycle = record {
