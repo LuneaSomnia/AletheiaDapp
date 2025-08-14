@@ -11,23 +11,47 @@ import Time "mo:base/Time";
 import Error "mo:base/Error";
 
 actor AletheianDispatchCanister {
-    type AletheianProfile = {
-        id : Principal;
-        online : Bool;
-        workload : Nat; // Current number of assigned claims
-        reputation : Nat; // XP score
-        expertise : [Text]; // Badges like "Health", "Politics"
-        location : ?Text; // Optional country code
-        lastActive : Int; // Timestamp
+    // Configuration constants
+    let TARGET_ALETHEIANS_PER_CLAIM = 3;
+    let SELECTION_TIMEOUT_NS = 5_000_000_000; // 5 seconds
+    let COOLDOWN_PERIOD_NS = 3600_000_000_000; // 1 hour
+    let MAX_EVENTS = 1000;
+    
+    // Stable storage with versioning
+    stable var dataVersion : Nat = 1;
+    stable var controller : Principal = caller;
+    stable var profileCanister : Principal = Principal.fromText("aaaaa-aa");
+    stable var verificationCanister : Principal = Principal.fromText("aaaaa-aa");
+    stable var notificationCanister : Principal = Principal.fromText("aaaaa-aa");
+    stable var authorizedCallers : [Principal] = [];
+    stable var assignmentsEntries : [(Text, Assignment)] = [];
+    stable var events : [Text] = [];
+    stable var lastAssignedEntries : [(Principal, Int)] = [];
+
+    let assignments = HashMap.HashMap<Text, Assignment>(0, Text.equal, Text.hash);
+    let lastAssigned = HashMap.HashMap<Principal, Int>(0, Principal.equal, Principal.hash);
+
+    type ClaimMeta = {
+        category : Text;
+        geo : ?Text;
+        complexity : Nat;
+        tags : [Text];
     };
 
-    type Claim = {
-        id : Text;
-        content : Text;
-        claimType : Text;
-        tags : [Text]; // Categories like "Politics", "Health"
-        locationHint : ?Text; // Optional geo-relevance
-        timestamp : Int;
+    type AssignmentStatus = {
+        #Pending;
+        #Assigned;
+        #PartiallyAssigned;
+        #Failed;
+    };
+
+    type Assignment = {
+        claimId : Text;
+        createdAt : Int;
+        selected : [Principal];
+        scores : [(Principal, Nat)];
+        status : AssignmentStatus;
+        notes : ?Text;
     };
 
     type AssignmentResult = Result.Result<[Principal], Text>;
@@ -39,23 +63,55 @@ actor AletheianDispatchCanister {
     let profiles = HashMap.HashMap<Principal, AletheianProfile>(0, Principal.equal, Principal.hash);
     let assignments = HashMap.HashMap<Text, [Principal]>(0, Text.equal, Text.hash);
 
-    // Canister references
-    let profileCanister = actor ("AletheianProfileCanister") : actor {
-        getProfile : (aletheian : Principal) -> async ?{
-            id : Principal;
-            rank : { #Trainee; #Junior; #Associate; #Senior; #Expert; #Master };
-            xp : Int;
-            expertiseBadges : [Text];
-            location : ?Text;
-            status : { #Active; #Suspended; #Retired };
-            warnings : Nat;
-            accuracy : Float;
-            claimsVerified : Nat;
-            completedTraining : [Text];
-            createdAt : Int;
-            lastActive : Int;
+    // Admin management
+    public shared({ caller }) func setController(newController : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized");
         };
-        heartbeat : () -> async ();
+        controller := newController;
+        #ok(())
+    };
+
+    public shared({ caller }) func setProfileCanister(p : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized");
+        };
+        profileCanister := p;
+        #ok(())
+    };
+
+    public shared({ caller }) func setVerificationCanister(p : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized");
+        };
+        verificationCanister := p;
+        #ok(())
+    };
+
+    public shared({ caller }) func setNotificationCanister(p : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized");
+        };
+        notificationCanister := p;
+        #ok(())
+    };
+
+    public shared({ caller }) func authorizeCaller(p : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized");
+        };
+        if (not Array.find<Principal>(authorizedCallers, func(principal) { principal == p }) != null) {
+            authorizedCallers := Array.append(authorizedCallers, [p]);
+        };
+        #ok(())
+    };
+
+    public shared({ caller }) func revokeCaller(p : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized");
+        };
+        authorizedCallers := Array.filter<Principal>(authorizedCallers, func(principal) { principal != p });
+        #ok(())
     };
 
     let verificationWorkflow = actor ("VerificationWorkflowCanister") : actor {
