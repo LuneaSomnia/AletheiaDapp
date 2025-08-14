@@ -153,238 +153,95 @@ actor class GamifiedLearningCanister(initialController : Principal) {
     };
 
     // Initialize with comprehensive modules
-    public func seedModules() : async () {
-        modules := [
-            {
-                id = "digital-literacy-101";
-                title = "Digital Literacy Fundamentals";
-                description = "Learn essential digital skills for the modern world";
-                category = "Foundations";
-                lessons = [
-                    {
-                        id = "internet-basics";
-                        title = "Internet Fundamentals";
-                        content = "Understanding how the internet works, browsers, and websites...";
-                        rewardPoints = 50;
-                        difficulty = "Beginner";
-                        questions = [
-                            {
-                                id = "q1";
-                                questionText = "What does URL stand for?";
-                                options = [
-                                    "Uniform Resource Locator",
-                                    "Universal Reference Link",
-                                    "Unified Resource Library",
-                                    "Uniform Retrieval Location"
-                                ];
-                                correctOption = "Uniform Resource Locator";
-                                explanation = "A URL (Uniform Resource Locator) is the address of a resource on the internet.";
-                                aiFeedback = "Understanding URLs helps you navigate and evaluate online resources effectively.";
-                            },
-                            {
-                                id = "q2";
-                                questionText = "Which protocol is used for secure web browsing?";
-                                options = ["HTTP", "FTP", "HTTPS", "SMTP"];
-                                correctOption = "HTTPS";
-                                explanation = "HTTPS (HyperText Transfer Protocol Secure) encrypts data between your browser and websites.";
-                                aiFeedback = "Recognizing secure protocols is crucial for protecting your personal information online.";
-                            }
-                        ];
-                    },
-                    {
-                        id = "online-safety";
-                        title = "Online Safety Practices";
-                        content = "Protecting yourself and your data online...";
-                        rewardPoints = 75;
-                        difficulty = "Intermediate";
-                        questions = [
-                            {
-                                id = "q1";
-                                questionText = "What's the strongest type of password?";
-                                options = [
-                                    "Short dictionary words",
-                                    "Long phrases with mixed characters",
-                                    "Your pet's name",
-                                    "12345678"
-                                ];
-                                correctOption = "Long phrases with mixed characters";
-                                explanation = "Long passphrases with upper/lower case letters, numbers and symbols are most secure.";
-                                aiFeedback = "Strong passwords are your first line of defense against unauthorized access.";
-                            },
-                            {
-                                id = "q2";
-                                questionText = "What should you do if you receive a suspicious email?";
-                                options = [
-                                    "Click links to verify",
-                                    "Reply with personal information",
-                                    "Delete without opening",
-                                    "Forward to friends"
-                                ];
-                                correctOption = "Delete without opening";
-                                explanation = "Suspicious emails may contain phishing attempts or malware.";
-                                aiFeedback = "Critical evaluation of communications helps prevent security breaches.";
-                            }
-                        ];
-                    }
-                ];
-            },
-            {
-                id = "critical-thinking";
-                title = "Critical Thinking Skills";
-                description = "Develop your ability to analyze information and ask the right questions";
-                category = "Core Skills";
-                lessons = [
-                    {
-                        id = "question-mirror";
-                        title = "Asking the Right Questions";
-                        content = "Learn how to formulate questions that uncover the truth...";
-                        rewardPoints = 100;
-                        difficulty = "Intermediate";
-                        questions = [
-                            {
-                                id = "q1";
-                                questionText = "What is the primary purpose of the 'Question Mirror' in Aletheia?";
-                                options = [
-                                    "To reflect the user's image",
-                                    "To generate questions that help critically analyze a claim",
-                                    "To provide answers to claims",
-                                    "To mirror the claim to other users"
-                                ];
-                                correctOption = "To generate questions that help critically analyze a claim";
-                                explanation = "The Question Mirror uses AI to generate insightful questions that help users critically evaluate claims.";
-                                aiFeedback = "Asking the right questions is foundational to critical thinking and truth discovery.";
-                            },
-                            {
-                                id = "q2";
-                                questionText = "Which question would be MOST helpful when evaluating a health claim?";
-                                options = [
-                                    "How many people have shared this?",
-                                    "What do my friends think about this?",
-                                    "What scientific evidence supports this from reputable organizations?",
-                                    "Does this align with my beliefs?"
-                                ];
-                                correctOption = "What scientific evidence supports this from reputable organizations?";
-                                explanation = "Scientific evidence from reputable sources is crucial for evaluating health claims.";
-                                aiFeedback = "Focusing on evidence helps separate facts from opinions.";
-                            }
-                        ];
-                    },
-                    {
-                        id = "source-evaluation";
-                        title = "Evaluating Sources with CRAAP";
-                        content = "Learn the CRAAP model for source evaluation: Currency, Relevance, Authority, Accuracy, Purpose";
-                        rewardPoints = 125;
-                        difficulty = "Advanced";
-                        questions = [
-                            {
-                                id = "q1";
-                                questionText = "What does the 'A' in CRAAP stand for?";
-                                options = [
-                                    "Availability",
-                                    "Authority",
-                                    "Accuracy",
-                                    "Appearance"
-                                ];
-                                correctOption = "Accuracy";
-                                explanation = "Accuracy refers to the reliability and correctness of the information.";
-                                aiFeedback = "Evaluating accuracy helps identify trustworthy information sources.";
-                            },
-                            {
-                                id = "q2";
-                                questionText = "Which factor is MOST important when evaluating a source's purpose?";
-                                options = [
-                                    "The design of the website",
-                                    "The author's educational background",
-                                    "The domain extension (.com, .org, etc.)",
-                                    "Whether the intent is to inform, persuade, or sell"
-                                ];
-                                correctOption = "Whether the intent is to inform, persuade, or sell";
-                                explanation = "Understanding purpose helps identify potential biases.";
-                                aiFeedback = "Recognizing purpose enables you to interpret information in proper context.";
-                            }
-                        ];
-                    }
-                ];
-            },
-            {
-                id = "misinformation-detection";
-                title = "Identifying Misinformation";
-                description = "Learn to spot and debunk common misinformation tactics";
-                category = "Advanced Skills";
-                lessons = [
-                    {
-                        id = "red-flags";
-                        title = "Recognizing Misinformation Red Flags";
-                        content = "Identify common signs of misinformation: emotional language, lack of sources, urgency...";
-                        rewardPoints = 100;
-                        difficulty = "Intermediate";
-                        questions = [
-                            {
-                                id = "q1";
-                                questionText = "Which is a common red flag for misinformation?";
-                                options = [
-                                    "Citations to scientific studies",
-                                    "Neutral, factual language",
-                                    "Emotional language and urgency",
-                                    "Author credentials provided"
-                                ];
-                                correctOption = "Emotional language and urgency";
-                                explanation = "Emotional appeals often distract from lack of evidence.";
-                                aiFeedback = "Recognizing emotional manipulation helps identify potential misinformation.";
-                            },
-                            {
-                                id = "q2";
-                                questionText = "What should you suspect when a claim lacks verifiable sources?";
-                                options = [
-                                    "It's probably cutting-edge research",
-                                    "It's likely to be accurate",
-                                    "It may be misinformation",
-                                    "The author is protecting sources"
-                                ];
-                                correctOption = "It may be misinformation";
-                                explanation = "Verifiable sources are essential for credible claims.";
-                                aiFeedback = "Source verification is crucial for information validation.";
-                            }
-                        ];
-                    },
-                    {
-                        id = "deepfake-awareness";
-                        title = "Deepfake Detection";
-                        content = "Learn to identify AI-generated manipulated media";
-                        rewardPoints = 150;
-                        difficulty = "Advanced";
-                        questions = [
-                            {
-                                id = "q1";
-                                questionText = "Which technique helps detect deepfake videos?";
-                                options = [
-                                    "Checking for perfect lip-syncing",
-                                    "Looking for unnatural blinking patterns",
-                                    "Verifying the number of views",
-                                    "Reading the comments section"
-                                ];
-                                correctOption = "Looking for unnatural blinking patterns";
-                                explanation = "AI often struggles to replicate natural human blinking patterns.";
-                                aiFeedback = "Attention to physiological details helps detect synthetic media.";
-                            },
-                            {
-                                id = "q2";
-                                questionText = "What's the MOST reliable way to verify a suspicious image?";
-                                options = [
-                                    "Asking friends on social media",
-                                    "Using reverse image search tools",
-                                    "Checking how many likes it has",
-                                    "Looking at the image file size"
-                                ];
-                                correctOption = "Using reverse image search tools";
-                                explanation = "Reverse image search can find original sources and context.";
-                                aiFeedback = "Technical verification tools provide objective evidence for media analysis.";
-                            }
-                        ];
-                    }
-                ];
-            }
-        ];
+    // Admin API implementations
+    public shared({ caller }) func createModule(m : Types.ModuleInput) : async Result.Result<Types.ModuleId, Text> {
+        if (caller != controller) {
+            return #err("Unauthorized: Only controller can create modules");
+        };
+        
+        switch (validateModuleInput(m)) {
+            case (#err(msg)) return #err(msg);
+            case (#ok) {};
+        };
+        
+        let moduleId = "module-" # Int.toText(Time.now());
+        let now = Time.now();
+        
+        let newModule : Types.Module = {
+            id = moduleId;
+            title = m.title;
+            description = m.description;
+            lessons = m.lessons;
+            xpReward = m.xpReward;
+            requiredForBadges = m.requiredForBadges;
+            isPublished = false;
+            createdAt = now;
+            updatedAt = now;
+            createdBy = caller;
+        };
+        
+        moduleStore.put(moduleId, newModule);
+        moduleOrder := Array.append(moduleOrder, [moduleId]);
+        #ok(moduleId)
+    };
+
+    public shared({ caller }) func updateModule(moduleId : Types.ModuleId, m : Types.ModuleInput) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized");
+        };
+        
+        switch (moduleStore.get(moduleId)) {
+            case null { return #err("Module not found") };
+            case (?existing) {
+                switch (validateModuleInput(m)) {
+                    case (#err(msg)) return #err(msg);
+                    case (#ok) {};
+                };
+                
+                let updated : Types.Module = {
+                    existing with 
+                    title = m.title;
+                    description = m.description;
+                    lessons = m.lessons;
+                    xpReward = m.xpReward;
+                    requiredForBadges = m.requiredForBadges;
+                    updatedAt = Time.now();
+                };
+                
+                moduleStore.put(moduleId, updated);
+                #ok(())
+            };
+        };
+    };
+
+    public shared({ caller }) func publishModule(moduleId : Types.ModuleId, publish : Bool) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized");
+        };
+        
+        switch (moduleStore.get(moduleId)) {
+            case null { #err("Module not found") };
+            case (?module) {
+                let updated = { module with isPublished = publish };
+                moduleStore.put(moduleId, updated);
+                #ok(())
+            };
+        };
+    };
+
+    public shared({ caller }) func deleteModule(moduleId : Types.ModuleId) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized");
+        };
+        
+        switch (moduleStore.get(moduleId)) {
+            case null { #err("Module not found") };
+            case (?_) {
+                moduleStore.delete(moduleId);
+                moduleOrder := Array.filter<Types.ModuleId>(moduleOrder, func(id) = id != moduleId);
+                #ok(())
+            };
+        };
     };
 
     // Public interface
