@@ -119,6 +119,33 @@ module {
         reason: Text 
     };
 
+    public type AIFeedback = {
+        userId: Principal;
+        timestamp: Int;
+        module: Text;
+        rating: Nat8;
+        comments: ?Text;
+    };
+
+    public type ResearchResult = {
+        sourceUrl: Text;
+        sourceName: Text;
+        credibilityScore: Float;
+        summary: Text;
+    };
+
+    public type MediaAnalysis = {
+        isDeepfake: Bool;
+        confidence: Float;
+        analysis: Text;
+    };
+
+    public type Finding = {
+        classification: Text;
+        explanation: Text;
+        evidence: [Text];
+    };
+
     // AI Adapter Types
     public type AIAdapterRequest = {
         requestType: Text;

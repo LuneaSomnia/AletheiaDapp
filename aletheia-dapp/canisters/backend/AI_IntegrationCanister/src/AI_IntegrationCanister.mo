@@ -1,4 +1,5 @@
 import Array "mo:base/Array";
+import Timer "mo:base/Timer";
 import Buffer "mo:base/Buffer";
 import Error "mo:base/Error";
 import HashMap "mo:base/HashMap";
@@ -52,6 +53,10 @@ actor AI_IntegrationCanister {
         getEmbedding : Text -> async Types.AIAdapterEmbeddingResponse;
         fetchURL : Text -> async Types.AIAdapterFetchResponse;
     } = actor(Principal.toText(Option.get(adapterPrincipal, Principal.fromText("aaaaa-aa"))));
+
+    let factLedgerCanister : actor {
+        getAllFacts : () -> async [Types.Claim];
+    } = actor("aaaaa-aa"); // TODO: Replace with actual principal
 
     // Public API implementation
     // 1. Question Generation Model
@@ -159,9 +164,8 @@ actor AI_IntegrationCanister {
         var modified = original;
         var redacted = false;
         
-        // Simple email redaction (Motoko doesn't support regex - use contains)
-        let parts = T.split(modified, #text "@");
-        if (T.contains(modified, #text "@")) {
+        // Simple email redaction
+        if (Text.contains(modified, #text "@")) {
             modified := "[REDACTED]";
             redacted := true;
         };
@@ -216,7 +220,7 @@ actor AI_IntegrationCanister {
                     lastError := code # ": " # msg;
                     if (not transient) break;
                     let delayNs = BASE_BACKOFF_MS * (2 ** attempts) * 1_000_000;
-                    await Async.sleep(delayNs);
+                    await Timer.setTimer(#nanoseconds delayNs);
                 };
             };
         };
@@ -281,7 +285,8 @@ actor AI_IntegrationCanister {
                 created : Int;
                 lastUpdated : Int;
             }, Text>(allFacts, func(fact) {
-                if (Text.contains(fact.content, #text claim.content) or Text.contains(claim.content, #text fact.content)) {
+                case (?claimText) {
+                  if (Text.contains(fact.text, #text claimText) or Text.contains(claimText, #text fact.text)) {
                     ?Nat.toText(fact.id)
                 } else {
                     null
