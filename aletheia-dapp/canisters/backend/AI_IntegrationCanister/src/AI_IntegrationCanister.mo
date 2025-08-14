@@ -10,6 +10,8 @@ import Time "mo:base/Time";
 import Nat "mo:base/Nat";
 import Blob "mo:base/Blob";
 import Option "mo:base/Option";
+import T "mo:base/Text";
+import Types "../common/Types";
 // import JSON "mo:json/JSON"; // TODO: Provide or implement a JSON library compatible with your Motoko version
 // import Http "mo:http/Http"; // TODO: Provide or implement an HTTP library compatible with your Motoko version
 import ExperimentalCycles "mo:base/ExperimentalCycles";
@@ -17,8 +19,7 @@ import Async "mo:base/Async";
 
 actor AI_IntegrationCanister {
     // Import common types
-    import T "mo:base/Text";
-    import Types "../common/Types";
+
     
     // Configuration
     let CACHE_TTL_NS = 86_400_000_000_000; // 24 hours in nanoseconds
@@ -171,10 +172,10 @@ actor AI_IntegrationCanister {
         };
         
         // Simple number redaction
-        let digitsOnlyMapped = T.map(modified, func (c : Char) : Char {
-            if (Char.isDigit(c)) c else 'x';
+        let digitsOnly = T.map(modified, func (c : Char) : Char {
+            if (Char.isDigit(c)) c else 'x'
         });
-        let digitsOnly = T.replace(digitsOnlyMapped, #text "x", "");
+        let digitsOnly = T.replace(digitsOnly, #text "x", "");
         if (digitsOnly.size() >= 7) {
             modified := T.replace(modified, #text digitsOnly, "[REDACTED]");
             redacted := true;
@@ -270,7 +271,7 @@ actor AI_IntegrationCanister {
     };
 
     // AI Module 3: Blockchain Duplicate Detection
-    shared func findDuplicates(claim : Claim) : async Result.Result<[Text], Text> {
+    public shared func findDuplicates(claim : Claim) : async Result.Result<[Text], Text> {
         try {
             let allFacts = await factLedgerCanister.getAllFacts();
             let similarClaims = Array.mapFilter<{
@@ -287,16 +288,15 @@ actor AI_IntegrationCanister {
             }, Text>(allFacts, func(fact) {
                 case (?claimText) {
                   if (Text.contains(fact.text, #text claimText) or Text.contains(claimText, #text fact.text)) {
-                    ?Nat.toText(fact.id);
-                  } else {
-                    null;
-                  }
-                };
+                    ?Nat.toText(fact.id)
+                } else {
+                    null
+                }
             });
             #ok(similarClaims);
         } catch (e) {
             #err("Duplicate detection failed: " # Error.message(e));
-        };
+        }
     };
 
     // AI Module 4: Information Retrieval & Summarization

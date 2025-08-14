@@ -10,30 +10,35 @@ import Time "mo:base/Time";
 import Iter "mo:base/Iter";
 import Int "mo:base/Int";
 import Nat8 "mo:base/Nat8";
+import T "mo:base/Text";
+import Types "../common/Types";
 // SHA256 not available in Motoko 0.9.8 base library. Use a stub or plug in a compatible library.
 
 actor ClaimSubmissionCanister {
-    // Import common types
-    import T "mo:base/Text";
-    import Types "../common/Types";
-    
     // Configuration
     let MAX_TEXT_LENGTH = 5000; // 5000 characters
     let MAX_RETRIES = 3;
     let RETRY_DELAY_NS = 300_000_000_000; // 5 minutes in nanoseconds
     
-    // Stable storage
+    // Stable storage with versioning
     stable var dataVersion : Nat = 1;
     stable var claimsEntries : [(Text, Types.Claim)] = [];
     stable var retryQueueEntries : [(Text, (Nat, Int))] = []; // (claimId, (retryCount, nextAttempt))
     
+    let claims = HashMap.HashMap<Text, Types.Claim>(0, T.equal, T.hash);
+    let retryQueue = HashMap.HashMap<Text, (Nat, Int)>(0, T.equal, T.hash);
+
     type ClaimResult = Result.Result<Text, Text>;
     type ClaimSubmission = {
-        content : { #text : Text; #blob : Blob; #url : Text };
+        content : ClaimContent;
         claimType : Text;
         context : ?Text;
         source : ?Text;
     };
+
+    // Stable storage
+    stable var claimsEntries : [(Text, Claim)] = [];
+    var claims = HashMap.HashMap<Text, Claim>(0, Text.equal, Text.hash);
 
     // Configuration
     let MAX_TEXT_LENGTH = 5000; // 5000 characters
@@ -126,14 +131,14 @@ actor ClaimSubmissionCanister {
     public shared ({caller}) func submitClaim(submission : ClaimSubmission) : async ClaimResult {
         try {
             // Validate claim type with proper switch syntax
-            let claimType : Types.ClaimType = switch (submission.claimType) {
-                case "text" #Text;
-                case "image" #Image;
-                case "video" #Video;
-                case "audio" #Audio;
-                case "url" #URL;
-                case "fakeSite" #FakeSite;
-                case "other" #Other("");
+            let claimType = switch (submission.claimType) {
+                case "text" { #text };
+                case "image" { #image };
+                case "video" { #video };
+                case "audio" { #audio };
+                case "articleLink" { #articleLink };
+                case "fakeNewsUrl" { #fakeNewsUrl };
+                case "other" { #other };
                 case (_) { throw Error.reject("Invalid claim type") };
             };
 
@@ -212,9 +217,8 @@ actor ClaimSubmissionCanister {
             switch (validatedContent) {
                 case (#blob(b)) {
                     switch (fileHash) {
-                        case (?cid) {
-                            // Store to IPFS
-                            ignore await IPFS_Adapter.upload(b);
+                        case (?hash) {
+                            ignore await storageCanister.storeBlob(hash, b);
                         };
                         case null {};
                     };
@@ -285,13 +289,9 @@ actor ClaimSubmissionCanister {
     };
 
     // Helper functions
-    func generateClaimId() : async Text {
-        let random = await Random.blob();
-        let bytes = Blob.toArray(random);
-        let hashBytes = Array.tabulate<Nat8>(16, func(i) { 
-            if (i < bytes.size()) bytes[i] else 0 
-        });
-        Hex.encode(hashBytes)
+    func generateId(userId : Principal) : Text {
+        let random = Int.toText(Time.now() % 1_000_000);
+        Principal.toText(userId) # "-" # random;
     };
 
     // Robust input sanitization
@@ -310,8 +310,17 @@ actor ClaimSubmissionCanister {
         T.startsWith(sanitized, #text "http://") or T.startsWith(sanitized, #text "https://")
     };
 
+    func generateClaimId() : async Text {
+        let random = await Random.blob();
+        let bytes = Blob.toArray(random);
+        let hashBytes = Array.tabulate<Nat8>(16, func(i) { 
+            if (i < bytes.size()) bytes[i] else 0 
+        });
+        Hex.encode(hashBytes)
+    };
+
     // Get claim by ID (user can only access their own claims)
-    public shared query ({caller}) func getClaim(claimId : Text) : async Result.Result<Types.Claim, Text> {
+    public shared query ({caller}) func getClaim(claimId : Text) : async Result.Result<Claim, Text> {
         switch (claims.get(claimId)) {
             case (?claim) {
                 if (claim.userId != caller) {

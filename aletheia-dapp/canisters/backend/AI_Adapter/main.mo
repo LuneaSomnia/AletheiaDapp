@@ -75,7 +75,7 @@ actor class AI_Adapter() = this {
             body = raw.response.body;
         };
         transformed;
-    }
+    };
 
     // Utility functions
     func generateRequestId(claimId: Text) : Text {
