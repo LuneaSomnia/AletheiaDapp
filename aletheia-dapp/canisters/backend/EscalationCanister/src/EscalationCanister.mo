@@ -11,30 +11,63 @@ import Text "mo:base/Text";
 import Time "mo:base/Time";
 
 actor EscalationCanister {
-    type ClaimId = Text;
-    type Verdict = Text;
-    type Finding = {
-        verdict : Verdict;
-        explanation : Text;
-        evidence : [Text];
+    // ------ Core Types ------
+    public type Verdict = {
+        #True; #MostlyTrue; #HalfTruth; #Misleading; #False;
+        #Unsubstantiated; #Opinion; #Propaganda;
     };
     
-    type EscalatedClaim = {
-        claimId : ClaimId;
-        initialFindings : [(Principal, Finding)]; // Original Aletheian findings
-        seniorFindings : [(Principal, Finding)]; // Senior Aletheian findings
-        councilFindings : [(Principal, Finding)]; // Council of Elders findings
-        status : {
-            #seniorReview;
-            #councilReview;
-            #resolved : Verdict;
-        };
-        timestamp : Int;
+    public type ReviewerOutcome = {
+        reviewer : Principal;
+        vote : Verdict;
+        reasoning : Text;
+        evidence : [Text];
+        submittedAt : Int;
+        anonymized : Bool;
     };
-
-    // Stable storage
-    stable var escalatedClaims : [(ClaimId, EscalatedClaim)] = [];
-    let claims = HashMap.HashMap<ClaimId, EscalatedClaim>(10, Text.equal, Text.hash);
+    
+    public type EscalationStatus = {
+        #Open; 
+        #InSeniorReview; 
+        #InCouncil; 
+        #Finalized; 
+        #PublishedUnresolved; 
+        #Cancelled;
+    };
+    
+    public type EscalationRecord = {
+        escalationId : Text;
+        claimId : Text;
+        initiatedBy : Principal;
+        initiatedAt : Int;
+        reason : Text;
+        status : EscalationStatus;
+        seniorReviewers : [Principal];
+        councilReviewers : [Principal];
+        seniorReviews : [ReviewerOutcome];
+        councilReviews : [ReviewerOutcome];
+        finalVerdict : ?Verdict;
+        finalExplanation : ?Text;
+        finalizedAt : ?Int;
+        dataVersion : Nat;
+    };
+    
+    // ------ Configuration ------
+    let REQUIRED_SENIORS : Nat = 3;
+    let REQUIRED_COUNCIL : Nat = 3;
+    let SENIOR_BADGE : Text = "Senior";
+    
+    // ------ Stable Storage ------
+    stable var escalations : [(Text, EscalationRecord)] = [];
+    stable var authorizedCallers : [Principal] = [];
+    stable var councilMembers : [Principal] = [];
+    stable var controller : Principal = Principal.fromText("aaaaa-aa");
+    stable var dataVersion : Nat = 1;
+    
+    // ------ Mutable State ------
+    let escalationMap = HashMap.HashMap<Text, EscalationRecord>(10, Text.equal, Text.hash);
+    let authorizedCallerSet = HashSet.fromIter<Principal>(authorizedCallers.vals(), 10, Principal.equal, Principal.hash);
+    let councilMemberSet = HashSet.fromIter<Principal>(councilMembers.vals(), 10, Principal.equal, Principal.hash);
 
     // Canister references
     let aletheianProfile = actor ("AletheianProfileCanister") : actor {
@@ -113,26 +146,265 @@ actor EscalationCanister {
     };
 
     system func preupgrade() {
-        escalatedClaims := Iter.toArray(claims.entries());
+        escalations := Iter.toArray(escalationMap.entries());
+        authorizedCallers := HashSet.toArray(authorizedCallerSet);
+        councilMembers := HashSet.toArray(councilMemberSet);
     };
 
     system func postupgrade() {
-        var claims = HashMap.fromIter<ClaimId, EscalatedClaim>(
-            escalatedClaims.vals(), 
+        escalationMap := HashMap.fromIter<Text, EscalationRecord>(
+            escalations.vals(), 
             10, 
             Text.equal, 
             Text.hash
         );
-        escalatedClaims := [];
+        authorizedCallerSet := HashSet.fromIter<Principal>(authorizedCallers.vals(), 10, Principal.equal, Principal.hash);
+        councilMemberSet := HashSet.fromIter<Principal>(councilMembers.vals(), 10, Principal.equal, Principal.hash);
+        escalations := [];
+        authorizedCallers := [];
+        councilMembers := [];
     };
 
-    // ================== PUBLIC INTERFACE ================== //
-
-    // Called by VerificationWorkflow when consensus fails
-    public shared func escalateClaim(
-        claimId : ClaimId, 
-        initialFindings : [(Principal, Finding)]
+    // ================== PUBLIC API ================== //
+    
+    public shared({ caller }) func initiateEscalation(
+        claimId : Text,
+        reason : Text
+    ) : async Result.Result<Text, Text> {
+        // Authorization check
+        if (not _isAuthorized(caller)) {
+            return #err("Unauthorized caller");
+        };
+        
+        let escalationId = _generateEscalationId();
+        let now = Time.now();
+        
+        let newRecord : EscalationRecord = {
+            escalationId;
+            claimId;
+            initiatedBy = caller;
+            initiatedAt = now;
+            reason;
+            status = #Open;
+            seniorReviewers = [];
+            councilReviewers = [];
+            seniorReviews = [];
+            councilReviews = [];
+            finalVerdict = null;
+            finalExplanation = null;
+            finalizedAt = null;
+            dataVersion;
+        };
+        
+        escalationMap.put(escalationId, newRecord);
+        _assignSeniorReviewers(escalationId);
+        
+        #ok(escalationId)
+    };
+    
+    public shared({ caller }) func submitSeniorReview(
+        escalationId : Text,
+        vote : Verdict,
+        reasoning : Text,
+        evidence : [Text]
     ) : async Result.Result<(), Text> {
+        switch (escalationMap.get(escalationId)) {
+            case null { #err("Escalation not found") };
+            case (?record) {
+                // Permission check
+                if (not Array.find<Principal>(record.seniorReviewers, func(p) = p == caller) != null) {
+                    return #err("Not assigned as senior reviewer");
+                };
+                
+                // Check for existing submission
+                if (Array.find<ReviewerOutcome>(record.seniorReviews, func(ro) = ro.reviewer == caller) != null) {
+                    return #err("Already submitted review");
+                };
+                
+                let newReview : ReviewerOutcome = {
+                    reviewer = caller;
+                    vote;
+                    reasoning;
+                    evidence;
+                    submittedAt = Time.now();
+                    anonymized = false;
+                };
+                
+                let updatedRecord = {
+                    record with
+                    seniorReviews = Array.append(record.seniorReviews, [newReview]);
+                };
+                
+                escalationMap.put(escalationId, updatedRecord);
+                await _computeSeniorOutcome(escalationId);
+                #ok()
+            };
+        };
+    };
+    
+    // ================== PRIVATE LOGIC ================== //
+    
+    func _assignSeniorReviewers(escalationId : Text) : async () {
+        switch (escalationMap.get(escalationId)) {
+            case (?record) {
+                let seniors = await aletheianProfile.getTopSeniorsByBadge(REQUIRED_SENIORS, SENIOR_BADGE);
+                let updatedRecord = {
+                    record with
+                    seniorReviewers = seniors;
+                    status = #InSeniorReview;
+                };
+                escalationMap.put(escalationId, updatedRecord);
+                
+                // Notify seniors
+                for (senior in seniors.vals()) {
+                    ignore await notification.sendNotification(
+                        senior,
+                        "Escalation Assignment",
+                        "New escalation requires your review: " # escalationId,
+                        "escalation_assignment"
+                    );
+                };
+            };
+            case null {};
+        };
+    };
+    
+    func _computeSeniorOutcome(escalationId : Text) : async () {
+        switch (escalationMap.get(escalationId)) {
+            case (?record) {
+                if (record.seniorReviews.size() < REQUIRED_SENIORS) return;
+                
+                let (consensusVerdict, voteCounts) = _calculateConsensus(record.seniorReviews);
+                
+                switch (consensusVerdict) {
+                    case (?v) {
+                        await _finalizeEscalation(escalationId, v, "Senior consensus reached");
+                    };
+                    case null {
+                        // No consensus - escalate to council
+                        let updatedRecord = {
+                            record with
+                            status = #InCouncil;
+                        };
+                        escalationMap.put(escalationId, updatedRecord);
+                        await _assignCouncilReviewers(escalationId);
+                    };
+                };
+            };
+            case null {};
+        };
+    };
+    
+    func _assignCouncilReviewers(escalationId : Text) : async () {
+        switch (escalationMap.get(escalationId)) {
+            case (?record) {
+                // Use configured council or fallback to top elders
+                let council = if (councilMemberSet.size() >= REQUIRED_COUNCIL) {
+                    Array.take(HashSet.toArray(councilMemberSet), REQUIRED_COUNCIL);
+                } else {
+                    await aletheianProfile.getTopElders(REQUIRED_COUNCIL);
+                };
+                
+                let updatedRecord = {
+                    record with
+                    councilReviewers = council;
+                };
+                escalationMap.put(escalationId, updatedRecord);
+                
+                // Notify council members
+                for (member in council.vals()) {
+                    ignore await notification.sendNotification(
+                        member,
+                        "Council Escalation",
+                        "Escalation requires council review: " # escalationId,
+                        "council_assignment"
+                    );
+                };
+            };
+            case null {};
+        };
+    };
+    
+    func _finalizeEscalation(
+        escalationId : Text,
+        verdict : Verdict,
+        explanation : Text
+    ) : async () {
+        switch (escalationMap.get(escalationId)) {
+            case (?record) {
+                let now = Time.now();
+                let updatedRecord = {
+                    record with
+                    status = #Finalized;
+                    finalVerdict = ?verdict;
+                    finalExplanation = ?explanation;
+                    finalizedAt = ?now;
+                };
+                escalationMap.put(escalationId, updatedRecord);
+                
+                // Persist to FactLedger
+                ignore await factLedger.appendEscalationResult(
+                    record.claimId,
+                    "Escalation resolved with verdict: " # debug_show(verdict)
+                );
+                
+                // Update reputations
+                ignore await reputationLogic.applyEscalationOutcome(
+                    escalationId,
+                    verdict,
+                    Array.append(record.seniorReviews, record.councilReviews)
+                );
+                
+                // Notify participants
+                let allParticipants = Array.append(record.seniorReviewers, record.councilReviewers);
+                for (participant in allParticipants.vals()) {
+                    ignore await notification.sendNotification(
+                        participant,
+                        "Escalation Resolved",
+                        "Escalation " # escalationId # " resolved with verdict: " # debug_show(verdict),
+                        "escalation_resolved"
+                    );
+                };
+            };
+            case null {};
+        };
+    };
+    
+    // ================== UTILITIES ================== //
+    
+    func _isAuthorized(caller : Principal) : Bool {
+        caller == controller or HashSet.mem(authorizedCallerSet, caller)
+    };
+    
+    func _generateEscalationId() : Text {
+        let randomBytes = Random.blob(16);
+        Hex.encode(Blob.toArray(randomBytes));
+    };
+    
+    func _calculateConsensus(reviews : [ReviewerOutcome]) : (?Verdict, [(Verdict, Nat)]) {
+        let voteCounts = HashMap.HashMap<Verdict, Nat>(7, Verdict.equal, Verdict.hash);
+        
+        for (review in reviews.vals()) {
+            let count = Option.get(voteCounts.get(review.vote), 0);
+            voteCounts.put(review.vote, count + 1);
+        };
+        
+        var maxVerdict : ?Verdict = null;
+        var maxCount : Nat = 0;
+        for ((verdict, count) in voteCounts.entries()) {
+            if (count > maxCount) {
+                maxVerdict := ?verdict;
+                maxCount := count;
+            };
+        };
+        
+        let threshold = (reviews.size() / 2) + 1;
+        if (maxCount >= threshold) {
+            (maxVerdict, Iter.toArray(voteCounts.entries()))
+        } else {
+            (null, Iter.toArray(voteCounts.entries()))
+        };
+    };
         try {
             // Check if already escalated
             if (Option.isSome(claims.get(claimId))) {
@@ -478,13 +750,64 @@ actor EscalationCanister {
         buffer.toArray()
     };
 
-    // ================== QUERY INTERFACE ================== //
-
-    public query func getEscalatedClaim(claimId : ClaimId) : async ?EscalatedClaim {
-        claims.get(claimId)
+    // ================== ADMIN API ================== //
+    
+    public shared({ caller }) func authorizeCaller(principal : Principal) : async () {
+        assert caller == controller;
+        authorizedCallerSet.add(principal);
     };
-
-    public query func getAllEscalatedClaims() : async [(ClaimId, EscalatedClaim)] {
-        Iter.toArray(claims.entries())
+    
+    public shared({ caller }) func revokeCaller(principal : Principal) : async () {
+        assert caller == controller;
+        authorizedCallerSet.delete(principal);
+    };
+    
+    public shared({ caller }) func setCouncilMembers(members : [Principal]) : async () {
+        assert caller == controller;
+        councilMemberSet := HashSet.fromIter<Principal>(members.vals(), 10, Principal.equal, Principal.hash);
+    };
+    
+    public shared({ caller }) func forceFinalize(
+        escalationId : Text,
+        verdict : Verdict,
+        explanation : Text
+    ) : async Result.Result<(), Text> {
+        assert caller == controller;
+        await _finalizeEscalation(escalationId, verdict, explanation);
+        #ok()
+    };
+    
+    // ================== QUERY INTERFACE ================== //
+    
+    public query func getEscalationStatus(escalationId : Text) : async ?EscalationRecord {
+        _redactForPublic(escalationMap.get(escalationId))
+    };
+    
+    public query func getEscalationDetails(escalationId : Text) : async ?EscalationRecord {
+        // Only controller can see unredacted details
+        if (caller == controller) {
+            escalationMap.get(escalationId)
+        } else {
+            _redactForPublic(escalationMap.get(escalationId))
+        }
+    };
+    
+    func _redactForPublic(record : ?EscalationRecord) : ?EscalationRecord {
+        switch (record) {
+            case (?r) {
+                ?{
+                    r with
+                    seniorReviews = Array.map<ReviewerOutcome, ReviewerOutcome>(
+                        r.seniorReviews,
+                        func(ro) { { ro with reviewer = Principal.fromText("anonymous") } }
+                    );
+                    councilReviews = Array.map<ReviewerOutcome, ReviewerOutcome>(
+                        r.councilReviews,
+                        func(ro) { { ro with reviewer = Principal.fromText("anonymous") } }
+                    );
+                }
+            };
+            case null null;
+        };
     };
 };
