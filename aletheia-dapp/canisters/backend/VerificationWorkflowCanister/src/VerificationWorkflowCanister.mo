@@ -14,6 +14,46 @@ actor VerificationWorkflowCanister {
     // ======== TYPE DEFINITIONS ========
     public type ClaimId = Text;
     public type AletheianId = Principal;
+    
+    // ======== CONSTANTS ========
+    let INITIAL_DATA_VERSION : Nat = 1;
+    let DEFAULT_SUBMISSION_TIMEOUT : Int = 604_800_000_000_000; // 7 days in nanoseconds
+    let MAX_RETRY_ATTEMPTS : Nat = 3;
+    let RETRY_DELAY : Int = 30_000_000_000; // 30 seconds
+
+    // ======== STABLE STORAGE ========
+    stable var workflowsEntries : [(ClaimId, Types.WorkflowEntry)] = [];
+    stable var authorizedCanistersEntries : [(Principal, Bool)] = [];
+    stable var controller : Principal = Principal.fromText("aaaaa-aa");
+    stable var submissionTimeout : Int = DEFAULT_SUBMISSION_TIMEOUT;
+    stable var dataVersion : Nat = INITIAL_DATA_VERSION;
+
+    // ======== STATE ========
+    let workflows = TrieMap.TrieMap<ClaimId, Types.WorkflowEntry>(Text.equal, Text.hash);
+    let authorizedCanisters = HashMap.HashMap<Principal, Bool>(1, Principal.equal, Principal.hash);
+
+    // ======== CANISTER REFERENCES ========
+    let factLedger = actor ("FactLedgerCanister") : actor {
+        recordFact : (claimId: Text, finalVerdict: Text, evidence: [Text], verifiers: [Principal], metadata: Text) -> async Result.Result<(), Text>;
+    };
+
+    let reputationLogic = actor ("ReputationLogicCanister") : actor {
+        applyBatchXP : (updates: [(Principal, Int)]) -> async Result.Result<(), Text>;
+    };
+
+    let escalation = actor ("EscalationCanister") : actor {
+        startEscalation : (claimId: Text, submissions: [(Principal, Text, [Text], Text)], metadata: Text) -> async Result.Result<(), Text>;
+    };
+
+    let notification = actor ("NotificationCanister") : actor {
+        notifyAletheians : (alist: [Principal], message: Text) -> async Result.Result<(), Text>;
+    };
+
+    let aletheianDispatch = actor ("AletheianDispatchCanister") : actor {
+        reassignAletheian : (claimId: Text, oldAletheian: Principal) -> async Result.Result<Principal, Text>;
+    };
+
+    // ======== TYPE DEFINITIONS ========
     public type Finding = {
         verdict : Text;
         explanation : Text;
