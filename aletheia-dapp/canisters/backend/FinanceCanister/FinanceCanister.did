@@ -1,7 +1,57 @@
 service : {
-  updateEarnings: (aletheianId: principal, xpEarned: nat) -> ();
-  withdraw: (amount: nat) -> (result);
-  addToPool: (amount: nat) -> ();
+  // Admin Configuration
+  setController : (newController : principal) -> ();
+  setPaymentPool : (periodId : text, amountE8s : nat64) -> ();
+  setPlatformFeePercent : (percent : nat) -> ();
+  setMinimumPayout : (minE8s : nat64) -> ();
+  setCarryoverBehavior : (behavior : { #carryover; #pending }) -> ();
+  setDIP20Canister : (canister : principal) -> ();
+  enableDIP20 : (enabled : bool) -> ();
+
+  // Payout Operations
+  submitXPSnapshot : (snapshot : XPSnapshot) -> (result.Result);
+  calculatePayouts : (periodId : text) -> (result.Result_1);
+  distributePayouts : (periodId : text) -> (result.Result_1);
+  withdrawPending : () -> (result.Result_2);
+
+  // Query APIs
+  getPayoutCycle : (periodId : text) -> (opt PayoutCycle) query;
+  getPendingBalance : (user : principal) -> (nat64) query;
+  getPlatformReserve : () -> (nat64) query;
+  getCarryoverPool : () -> (nat64) query;
 }
 
-type result = variant { ok: text; err: text };
+type PayoutCycle = record {
+  periodId : text;
+  poolAmount : nat64;
+  timestamp : nat64;
+  snapshotHash : text;
+  computed : opt vec PayoutInstruction;
+  distributed : bool;
+  feeTaken : nat64;
+};
+
+type PayoutInstruction = record {
+  recipient : principal;
+  amountE8s : nat64;
+  memo : text;
+};
+
+type XPSnapshot = record {
+  periodId : text;
+  entries : vec XPEntry;
+};
+
+type XPEntry = record {
+  principal : principal;
+  xp : nat;
+};
+
+type result = variant {
+  ok : text;
+  err : text;
+};
+
+type result.Result = variant { ok; err : text };
+type result.Result_1 = variant { ok : vec PayoutInstruction; err : text };
+type result.Result_2 = variant { ok : nat64; err : TransferError };

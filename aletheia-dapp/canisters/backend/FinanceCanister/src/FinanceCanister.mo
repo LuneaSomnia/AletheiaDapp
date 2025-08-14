@@ -81,18 +81,41 @@ actor class FinanceCanister() = this {
         sendNotification : (userId : Principal, title : Text, message : Text, notifType : Text) -> async Nat;
     };
 
-    // Stable state variables
-    stable var revenuePool : Nat64 = 0;
-    stable var earningsEntries : [(Principal, Nat64)] = [];
-    stable var lastDistributionTime : Int = 0;
-    stable var totalMonthlyXP : Nat = 0;
-    stable var monthlyXPEntries : [(Principal, Nat)] = [];
-    stable var transactions : [Transaction] = [];
+    // Stable state variables - version 2
+    stable var dataVersion : Nat = 1;
+    stable var payoutCyclesEntries : [(Text, PayoutCycle)] = [];
+    stable var pendingBalancesEntries : [(Principal, Nat64)] = [];
+    stable var platformReserve : Nat64 = 0;
+    stable var carryoverPool : Nat64 = 0;
+    stable var controller : Principal = initializer;
+    stable var dip20Canister : ?Principal = null;
+    stable var dip20Enabled : Bool = false;
+    
+    // Configuration
     stable var config : Config = {
-        distributionPercentage = 50; // 50% of revenue pool
-        distributionInterval = 30 * 24 * 60 * 60 * 1_000_000_000; // 30 days in nanoseconds
-        fee = 10_000; // 0.0001 ICP
+        platformFeePercent = 0;
+        minimumPayout = 10_000; // 0.0001 ICP by default
+        carryoverBehavior = #carryover;
+        paymentPool = 0;
     };
+
+    // Type definitions
+    public type PayoutInstruction = { recipient : Principal; amountE8s : Nat64; memo : Text };
+    public type XPEntry = { principal : Principal; xp : Nat };
+    public type XPSnapshot = { periodId : Text; entries : [XPEntry] };
+    public type PayoutCycle = {
+        periodId : Text;
+        poolAmount : Nat64;
+        timestamp : Nat64;
+        snapshotHash : Text;
+        computed : ?[PayoutInstruction];
+        distributed : Bool;
+        feeTaken : Nat64;
+    };
+
+    // Mutable state
+    var payoutCycles = HashMap.HashMap<Text, PayoutCycle>(0, Text.equal, Text.hash);
+    var pendingBalances = HashMap.HashMap<Principal, Nat64>(0, Principal.equal, Principal.hash);
     
     // Types
     public type Transaction = {
@@ -115,15 +138,46 @@ actor class FinanceCanister() = this {
     let DECIMALS : Nat64 = 100_000_000; // 1 ICP = 100,000,000 e8s
     
     // Initialize from stable state
+    system func preupgrade() {
+        payoutCyclesEntries := Iter.toArray(payoutCycles.entries());
+        pendingBalancesEntries := Iter.toArray(pendingBalances.entries());
+    };
+
     system func postupgrade() {
-        earnings := Trie.empty();
-        for ((p, n) in earningsEntries.vals()) {
-            earnings := Trie.put(earnings, key(p), Principal.equal, n : Nat64).0;
+        payoutCycles := HashMap.fromIter<Text, PayoutCycle>(
+            payoutCyclesEntries.vals(), 0, Text.equal, Text.hash
+        );
+        pendingBalances := HashMap.fromIter<Principal, Nat64>(
+            pendingBalancesEntries.vals(), 0, Principal.equal, Principal.hash
+        );
+        
+        // Data migration if needed
+        if (dataVersion < 2) {
+            // Migrate from old storage format
+            platformReserve := 0;
+            carryoverPool := 0;
+            dataVersion := 2;
         };
-        monthlyXP := Trie.empty();
-        for ((p, n) in monthlyXPEntries.vals()) {
-            monthlyXP := Trie.put(monthlyXP, key(p), Principal.equal, n : Nat).0;
-        };
+    };
+
+    func _computeSnapshotHash(snapshot : XPSnapshot) : Text {
+        // Simple hash implementation - TODO: Replace with proper hash function
+        let entriesText = Array.foldLeft<XPEntry, Text>(
+            snapshot.entries,
+            "",
+            func(acc : Text, e : XPEntry) : Text {
+                acc # Principal.toText(e.principal) # ":" # Nat.toText(e.xp) # ";"
+            }
+        );
+        Text.map(entriesText, Prim.charToUpper)
+    };
+
+    func _calculateTotalXP(snapshot : XPSnapshot) : Nat {
+        Array.foldLeft<XPEntry, Nat>(
+            snapshot.entries,
+            0,
+            func(acc : Nat, e : XPEntry) : Nat { acc + e.xp }
+        )
     };
     
     system func preupgrade() {
@@ -186,32 +240,119 @@ actor class FinanceCanister() = this {
         monthlyXP := Trie.put(monthlyXP, key(user), Principal.equal, xp).0;
     };
     
-    // Calculate and distribute earnings (admin or automated)
-    public shared({ caller }) func distributeMonthlyPool() : async () {
-        assert isAdmin(caller) or Time.now() >= lastDistributionTime + config.distributionInterval;
-        
-        if (revenuePool == 0 or totalMonthlyXP == 0) {
-            Debug.print("No revenue or XP to distribute");
-            return;
+    // XP Snapshot handling
+    public shared({ caller }) func submitXPSnapshot(snapshot : XPSnapshot) : async Result.Result<(), Text> {
+        if (not isController(caller) and not isReputationLogic(caller)) {
+            return #err("Unauthorized");
         };
         
-        let distributionAmount : Nat64 = (revenuePool * toNat64(config.distributionPercentage)) / 100;
-        revenuePool -= distributionAmount;
-        
-        var distributed : Nat64 = 0;
-        var recipientCount = 0;
-        
-        for ((user, xp) in Trie.iter(monthlyXP)) {
-            if (xp > 0) {
-                let share : Nat64 = (distributionAmount * toNat64(xp)) / toNat64(totalMonthlyXP);
-                distributed += share;
-                
-                let current = Trie.get(earnings, key(user), Principal.equal);
-                let newAmount : Nat64 = Option.get(current, 0 : Nat64) + share;
-                earnings := Trie.put(earnings, key(user), Principal.equal, newAmount).0;
-                recipientCount += 1;
+        let hash = _computeSnapshotHash(snapshot);
+        let cycle = switch (payoutCycles.get(snapshot.periodId)) {
+            case (?c) { c with snapshotHash = hash };
+            case null { 
+                { 
+                    periodId = snapshot.periodId; 
+                    poolAmount = 0; 
+                    timestamp = Time.now(); 
+                    snapshotHash = hash; 
+                    computed = null; 
+                    distributed = false; 
+                    feeTaken = 0 
+                } 
             };
         };
+        
+        payoutCycles.put(snapshot.periodId, cycle);
+        #ok()
+    };
+
+    // Payout calculation
+    public shared({ caller }) func calculatePayouts(periodId : Text) : async Result.Result<[PayoutInstruction], Text> {
+        let cycle = switch (payoutCycles.get(periodId)) {
+            case (?c) c;
+            case null return #err("Payout cycle not found");
+        };
+        
+        let snapshot = switch (cycle.snapshotHash) {
+            case "" return #err("No snapshot for this cycle");
+            case _ {};
+        };
+        
+        let totalXP = _calculateTotalXP(snapshot);
+        if (totalXP == 0) {
+            carryoverPool += cycle.poolAmount;
+            return #err("Total XP is zero - pool carried over");
+        };
+        
+        let (instructions, feeTaken) = _calculatePayoutsInternal(cycle.poolAmount, snapshot, config.platformFeePercent);
+        let updatedCycle = { cycle with computed = ?instructions; feeTaken };
+        payoutCycles.put(periodId, updatedCycle);
+        
+        #ok(instructions)
+    };
+
+    func _calculatePayoutsInternal(poolAmount : Nat64, snapshot : XPSnapshot, feePercent : Nat) : ([PayoutInstruction], Nat64) {
+        let fee = (poolAmount * Nat64.fromNat(feePercent)) / 100;
+        let distributablePool = poolAmount - fee;
+        let totalXP = _calculateTotalXP(snapshot);
+        
+        var remaining = distributablePool;
+        var instructions : [PayoutInstruction] = [];
+        var remainders : [(Principal, Nat64, Nat64)] = []; // (principal, amount, remainder)
+        
+        // First pass - calculate base amounts
+        for (entry in snapshot.entries.vals()) {
+            let rawShare = (Nat64.fromNat(entry.xp) * distributablePool) / Nat64.fromNat(totalXP);
+            let remainder = (Nat64.fromNat(entry.xp) * distributablePool) % Nat64.fromNat(totalXP);
+            
+            remainders := Array.append(remainders, [(entry.principal, rawShare, remainder)]);
+            remaining -= rawShare;
+        };
+        
+        // Sort remainders for largest remainder method
+        let sortedRemainders = Array.sort(remainders, func(a : (Principal, Nat64, Nat64), b : (Principal, Nat64, Nat64)) : Order.Order {
+            switch (Nat64.compare(b.2, a.2)) {
+                case (#less) #less;
+                case (#greater) #greater;
+                case (#equal) Text.compare(Principal.toText(a.0), Principal.toText(b.0));
+            }
+        });
+        
+        // Distribute remaining units
+        var i : Nat = 0;
+        while (remaining > 0 and i < sortedRemainders.size()) {
+            let (principal, amount, _) = sortedRemainders[i];
+            let newAmount = amount + 1;
+            remaining -= 1;
+            
+            // Update the remainders array
+            remainders := Array.map(remainders, func(r : (Principal, Nat64, Nat64)) : (Principal, Nat64, Nat64) {
+                if (r.0 == principal) (principal, newAmount, 0) else r
+            });
+            i += 1;
+        };
+        
+        // Build final instructions
+        for ((principal, amount, _) in remainders.vals()) {
+            if (amount >= config.minimumPayout) {
+                instructions := Array.append(instructions, [{
+                    recipient = principal;
+                    amountE8s = amount;
+                    memo = "Payout for " # periodId;
+                }]);
+            } else {
+                switch (config.carryoverBehavior) {
+                    case (#carryover) { carryoverPool += amount };
+                    case (#pending) {
+                        let current = Option.get(pendingBalances.get(principal), 0);
+                        pendingBalances.put(principal, current + amount);
+                    };
+                }
+            }
+        };
+        
+        (instructions, fee)
+    };
         
         // Reset monthly XP
         monthlyXP := Trie.empty();
@@ -227,8 +368,50 @@ actor class FinanceCanister() = this {
         Debug.print("Distributed " # debug_show(distributed) # " to " # debug_show(recipientCount) # " users");
     };
     
-    // Withdraw earnings to user's account
-    public shared({ caller }) func withdraw(amount : Nat64) : async TransferResult {
+    // Payout distribution
+    public shared({ caller }) func distributePayouts(periodId : Text) : async Result.Result<[PayoutInstruction], Text> {
+        assert isController(caller);
+        
+        let cycle = switch (payoutCycles.get(periodId)) {
+            case (?c) c;
+            case null return #err("Payout cycle not found");
+        };
+        
+        let instructions = switch (cycle.computed) {
+            case (?ins) ins;
+            case null return #err("Payouts not calculated");
+        };
+        
+        if (dip20Enabled) {
+            switch (dip20Canister) {
+                case (?dip20) {
+                    let dip20Actor : DIP20TokenCanister.DIP20Token = actor(Principal.toText(dip20));
+                    for (inst in instructions.vals()) {
+                        let result = await dip20Actor.transfer(inst.recipient, Nat64.toNat(inst.amountE8s));
+                        switch (result) {
+                            case (#Ok _) {};
+                            case (#Err e) {
+                                // TODO: Handle partial failures
+                                return #err("DIP20 transfer failed: " # debug_show(e));
+                            };
+                        }
+                    };
+                };
+                case null return #err("DIP20 not configured");
+            }
+        };
+        
+        // Update state
+        let updatedCycle = { cycle with distributed = true };
+        payoutCycles.put(periodId, updatedCycle);
+        platformReserve += cycle.feeTaken;
+        
+        // TODO: Send notifications
+        #ok(instructions)
+    };
+
+    // Withdraw individual pending balance (for users)
+    public shared({ caller }) func withdrawPending() : async TransferResult {
         let account = accountIdentifier(caller, null);
         let current = Trie.get(earnings, key(caller), Principal.equal);
         
@@ -304,17 +487,65 @@ actor class FinanceCanister() = this {
         };
     };
     
-    // Admin functions
-    public shared({ caller }) func addAdmin(newAdmin : Principal) : async () {
-        assert isAdmin(caller);
-        if (Option.isNull(Array.find(admins, func (a : Principal) : Bool { a == newAdmin }))) {
-            admins := Array.append(admins, [newAdmin]);
-        };
+    // Admin API functions
+    public shared({ caller }) func setController(newController : Principal) : async () {
+        assert isController(caller);
+        controller := newController;
     };
-    
-    shared({ caller }) func updateConfig(newConfig : Config) : async () {
-        assert isAdmin(caller);
-        config := newConfig;
+
+    public shared({ caller }) func setPaymentPool(periodId : Text, amountE8s : Nat64) : async () {
+        assert isController(caller);
+        let cycle = switch (payoutCycles.get(periodId)) {
+            case (?c) { c with poolAmount = amountE8s };
+            case null { 
+                { 
+                    periodId; 
+                    poolAmount = amountE8s; 
+                    timestamp = 0; 
+                    snapshotHash = ""; 
+                    computed = null; 
+                    distributed = false; 
+                    feeTaken = 0 
+                } 
+            };
+        };
+        payoutCycles.put(periodId, cycle);
+    };
+
+    public shared({ caller }) func setPlatformFeePercent(percent : Nat) : async () {
+        assert isController(caller);
+        assert percent <= 100;
+        config := { config with platformFeePercent = percent };
+    };
+
+    public shared({ caller }) func setMinimumPayout(minE8s : Nat64) : async () {
+        assert isController(caller);
+        config := { config with minimumPayout = minE8s };
+    };
+
+    public shared({ caller }) func setCarryoverBehavior(behavior : { #carryover; #pending }) : async () {
+        assert isController(caller);
+        config := { config with carryoverBehavior = behavior };
+    };
+
+    public shared({ caller }) func setDIP20Canister(canister : Principal) : async () {
+        assert isController(caller);
+        dip20Canister := ?canister;
+    };
+
+    public shared({ caller }) func enableDIP20(enabled : Bool) : async () {
+        assert isController(caller);
+        dip20Enabled := enabled;
+    };
+
+    // Permission checks
+    func isController(caller : Principal) : Bool {
+        caller == controller
+    };
+
+    func isReputationLogic(caller : Principal) : Bool {
+        // Implement proper principal check for ReputationLogicCanister
+        Principal.toText(caller) == Principal.toText(Principal.fromText("rrkah-fqaaa-aaaaa-aaaaq-cai")) // TODO: Replace with actual principal
     };
     
     // Query functions
