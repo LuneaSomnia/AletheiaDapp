@@ -1,0 +1,20 @@
+service AI_Adapter : {
+    // Core Processing
+    sendForProcessing : (Types.AIAdapterRequest) -> (async Types.AIAdapterResponse);
+    getEmbedding : ([Text], ?Text) -> (async Types.AIAdapterEmbeddingResponse);
+    fetchURL : (Text, ?Types.FetchOptions) -> (async Types.AIAdapterFetchResponse);
+    searchIndex : (Text, Nat) -> (async Types.AIAdapterSearchResponse);
+    upsertIndex : (Text, Text, ?Text) -> (async Types.AIAdapterUpsertResponse);
+    storeToIPFS : (Text, ?Text) -> (async Types.AIAdapterStoreResponse);
+    healthCheck : () -> (async Text);
+    
+    // Admin & Configuration
+    setMode : (Types.DeploymentMode) -> ();
+    setApiKey : (Text, Text) -> (); // (provider, encryptedKey)
+    getConfiguredProviders : () -> (async [Text]);
+    setRateLimit : (Principal, Nat) -> (); // (caller, callsPerMinute)
+    
+    // Monitoring
+    getRequestStats : () -> (async (Nat, Nat)); // (successCount, errorCount)
+    getLastError : () -> (async ?Text);
+}

@@ -159,7 +159,7 @@ module {
     };
 
     public type AIAdapterResponse = {
-        #Success: Text;  // JSON string of response
+        #Success: Text;
         #Error: (code: Text, message: Text, transient: Bool);
     };
 
@@ -171,5 +171,39 @@ module {
     public type AIAdapterFetchResponse = {
         #Success: Text;
         #Error: Text;
+    };
+
+    public type AIAdapterSearchResponse = {
+        #Success: [{docId: Text; score: Float; snippet: Text}];
+        #Error: Text;
+    };
+
+    public type AIAdapterUpsertResponse = {
+        #Success: Text;
+        #Error: Text;
+    };
+
+    public type AIAdapterStoreResponse = {
+        #Success: Text; // CID
+        #Error: Text;
+    };
+
+    public type FetchOptions = {
+        headers: ?[(Text, Text)];
+        method: ?Text;
+        body: ?[Nat8];
+        transform: ?{
+            function : Principal;
+            context : [Nat8];
+        };
+        max_response_bytes: ?Nat;
+    };
+
+    public type DeploymentMode = {
+        #Direct;
+        #Bridge: {
+            bridgePrincipal: Principal;
+            maxRetries: Nat;
+        };
     };
 };
