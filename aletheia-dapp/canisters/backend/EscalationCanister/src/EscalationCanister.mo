@@ -14,7 +14,7 @@ actor EscalationCanister {
     // ------ Core Types ------
     public type Verdict = {
         #True; #MostlyTrue; #HalfTruth; #Misleading; #False;
-        #Unsubstantiated; #Opinion; #Propaganda
+        #Unsubstantiated; #Opinion; #Propaganda;
     };
     
     public type ReviewerOutcome = {
@@ -405,6 +405,32 @@ actor EscalationCanister {
             (null, Iter.toArray(voteCounts.entries()))
         };
     };
+        try {
+            // Check if already escalated
+            if (Option.isSome(claims.get(claimId))) {
+                return #err("Claim already escalated");
+            };
+
+            // Create new escalated claim
+            let newClaim : EscalatedClaim = {
+                claimId;
+                initialFindings;
+                seniorFindings = [];
+                councilFindings = [];
+                status = #seniorReview;
+                timestamp = Time.now();
+            };
+
+            claims.put(claimId, newClaim);
+
+            // Assign to senior Aletheians
+            await assignToSeniorReviewers(claimId);
+
+            #ok();
+        } catch (e) {
+            #err("Escalation failed: " # Error.message(e));
+        }
+    };
 
     // Senior Aletheians submit their findings
     public shared ({ caller }) func submitSeniorFinding(
@@ -784,4 +810,4 @@ actor EscalationCanister {
             case null null;
         };
     };
-};
+
