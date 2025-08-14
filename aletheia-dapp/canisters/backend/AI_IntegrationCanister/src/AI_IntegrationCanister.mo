@@ -270,7 +270,7 @@ actor AI_IntegrationCanister {
     };
 
     // AI Module 3: Blockchain Duplicate Detection
-    public shared func findDuplicates(claim : Claim) : async Result.Result<[Text], Text> {
+    shared func findDuplicates(claim : Claim) : async Result.Result<[Text], Text> {
         try {
             let allFacts = await factLedgerCanister.getAllFacts();
             let similarClaims = Array.mapFilter<{
@@ -287,15 +287,16 @@ actor AI_IntegrationCanister {
             }, Text>(allFacts, func(fact) {
                 case (?claimText) {
                   if (Text.contains(fact.text, #text claimText) or Text.contains(claimText, #text fact.text)) {
-                    ?Nat.toText(fact.id)
-                } else {
-                    null
-                }
+                    ?Nat.toText(fact.id);
+                  } else {
+                    null;
+                  }
+                };
             });
             #ok(similarClaims);
         } catch (e) {
             #err("Duplicate detection failed: " # Error.message(e));
-        }
+        };
     };
 
     // AI Module 4: Information Retrieval & Summarization
