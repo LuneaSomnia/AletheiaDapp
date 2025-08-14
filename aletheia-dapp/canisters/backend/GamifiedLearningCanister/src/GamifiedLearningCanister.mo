@@ -10,12 +10,52 @@ import Time "mo:base/Time";
 import Float "mo:base/Float";
 import Debug "mo:base/Debug";
 
-actor class GamifiedLearningCanister() {
+actor class GamifiedLearningCanister(initialController : Principal) {
     type UserId = Principal;
-    type ModuleId = Text;
-    type LessonId = Text;
-    type QuestionId = Text;
-    type RewardPoints = Nat;
+    
+    // Stable state storage
+    stable var modules : [(ModuleId, Types.Module)] = [];
+    stable var userProgress : [(Text, Types.UserProgress)] = [];
+    stable var moduleOrder : [Types.ModuleId] = [];
+    stable var authorizedCanisters : [(Principal, Bool)] = [];
+    stable var controller : Principal = initialController;
+    stable var dataVersion : Nat = 1;
+
+    // Mutable state
+    let moduleStore = HashMap.fromIter<Types.ModuleId, Types.Module>(
+        modules.vals(), modules.size(), Text.equal, Text.hash);
+    let progressStore = HashMap.fromIter<Text, Types.UserProgress>(
+        userProgress.vals(), userProgress.size(), Text.equal, Text.hash);
+    let authorizedCanisterStore = HashMap.fromIter<Principal, Bool>(
+        authorizedCanisters.vals(), authorizedCanisters.size(), Principal.equal, Principal.hash);
+
+    // Canister references
+    let userAccount : actor {
+        recordActivity : (Principal, Types.ActivityRecord) -> async Result.Result<(), Text>;
+    } = actor("UserAccountCanister");
+    
+    let reputation : actor {
+        awardXP : (Principal, Nat, Text) -> async Result.Result<(), Text>;
+    } = actor("ReputationLogicCanister");
+    
+    let notification : actor {
+        sendNotification : (Principal, Text, Text, Text) -> async Nat;
+    } = actor("NotificationCanister");
+
+    // Helper functions
+    func generateProgressId(user : Principal, moduleId : Types.ModuleId) : Text {
+        Principal.toText(user) # "-" # moduleId
+    };
+
+    func validateModuleInput(m : Types.ModuleInput) : Result.Result<(), Text> {
+        if (m.title == "") { return #err("Title cannot be empty") };
+        if (m.xpReward == 0) { return #err("XP reward must be positive") };
+        if (m.lessons.size() == 0) { return #err("Module must have at least one lesson") };
+        #ok(())
+    };
+
+    func keyEquals(key1 : Text, key2 : Text) : Bool { key1 == key2 };
+    func keyHash(key : Text) : Hash.Hash { Text.hash(key) };
 
     public type Answer = {
         questionId : QuestionId;
@@ -348,7 +388,103 @@ actor class GamifiedLearningCanister() {
     };
 
     // Public interface
-    public shared query func getAvailableModules() : async [Module] {
+    // User API implementations
+    public shared query func listModules(onlyPublished : Bool) : async [Types.ModuleSummary] {
+        Array.mapFilter<Types.ModuleId, Types.ModuleSummary>(
+            moduleOrder,
+            func(moduleId) {
+                switch (moduleStore.get(moduleId)) {
+                    case null { null };
+                    case (?m) {
+                        if (onlyPublished and not m.isPublished) {
+                            null
+                        } else {
+                            ?{
+                                id = m.id;
+                                title = m.title;
+                                description = m.description;
+                                xpReward = m.xpReward;
+                                lessonCount = m.lessons.size();
+                                isPublished = m.isPublished;
+                            }
+                        }
+                    };
+                };
+            }
+        )
+    };
+
+    public shared query func getModule(moduleId : Types.ModuleId) : async ?Types.Module {
+        moduleStore.get(moduleId)
+    };
+
+    public shared({ caller }) func enrollModule(moduleId : Types.ModuleId) : async Result.Result<Types.ProgressId, Text> {
+        switch (moduleStore.get(moduleId)) {
+            case null { #err("Module not found") };
+            case (?module) {
+                if (module.isPublished == false) {
+                    return #err("Module is not published");
+                };
+                
+                let progressId = generateProgressId(caller, moduleId);
+                let now = Time.now();
+                
+                let progress : Types.UserProgress = {
+                    progressId = progressId;
+                    user = caller;
+                    moduleId = moduleId;
+                    lessonIndex = 0;
+                    lessonStatuses = Array.init<Bool>(module.lessons.size(), false);
+                    progressPercent = 0;
+                    enrolledAt = now;
+                    completedAt = null;
+                    xpAwarded = false;
+                };
+                
+                progressStore.put(progressId, progress);
+                #ok(progressId)
+            };
+        };
+    };
+
+    public shared({ caller }) func recordLessonComplete(moduleId : Types.ModuleId, lessonIndex : Nat) : async Result.Result<(), Text> {
+        let progressId = generateProgressId(caller, moduleId);
+        
+        switch (progressStore.get(progressId)) {
+            case null { #err("Not enrolled in module") };
+            case (?progress) {
+                switch (moduleStore.get(moduleId)) {
+                    case null { #err("Module not found") };
+                    case (?module) {
+                        if (lessonIndex >= module.lessons.size()) {
+                            return #err("Invalid lesson index");
+                        };
+                        
+                        let newStatuses = Array.tabulate<Bool>(
+                            module.lessons.size(),
+                            func(i) { 
+                                if (i == lessonIndex) true 
+                                else progress.lessonStatuses[i]
+                            }
+                        );
+                        
+                        let completed = Array.filter<Bool>(newStatuses, func(b) = b).size();
+                        let newPercent = (completed * 100) / module.lessons.size();
+                        
+                        let updated = {
+                            progress with
+                            lessonIndex = lessonIndex;
+                            lessonStatuses = newStatuses;
+                            progressPercent = newPercent;
+                        };
+                        
+                        progressStore.put(progressId, updated);
+                        #ok(())
+                    };
+                };
+            };
+        };
+    };
         // Return modules without answers
         Array.map<Module, Module>(
             modules,
@@ -787,18 +923,114 @@ actor class GamifiedLearningCanister() {
     };
 
     // Upgrade hooks
+    public shared({ caller }) func completeModule(moduleId : Types.ModuleId) : async Result.Result<(), Text> {
+        let progressId = generateProgressId(caller, moduleId);
+        
+        switch (progressStore.get(progressId)) {
+            case null { #err("Not enrolled in module") };
+            case (?progress) {
+                if (progress.completedAt != null) {
+                    return #ok(()); // Idempotent
+                };
+                
+                switch (moduleStore.get(moduleId)) {
+                    case null { #err("Module not found") };
+                    case (?module) {
+                        if (progress.progressPercent < 100) {
+                            return #err("Module not complete");
+                        };
+                        
+                        // Award XP
+                        switch (await reputation.awardXP(caller, module.xpReward, "module_complete:" # moduleId)) {
+                            case (#err(e)) return #err("XP award failed: " # e);
+                            case (#ok) {};
+                        };
+                        
+                        // Record activity
+                        switch (await userAccount.recordActivity(caller, {
+                            claimId = moduleId;
+                            timestamp = Time.now();
+                            activityType = #learningCompleted;
+                        })) {
+                            case (#err(e)) return #err("Activity logging failed: " # e);
+                            case (#ok) {};
+                        };
+                        
+                        // Update progress
+                        let updated = { progress with 
+                            completedAt = ?Time.now();
+                            xpAwarded = true;
+                        };
+                        progressStore.put(progressId, updated);
+                        
+                        // Send notification
+                        ignore await notification.sendNotification(
+                            caller,
+                            "Module Complete",
+                            "You completed module: " # module.title,
+                            "learning_complete"
+                        );
+                        
+                        #ok(())
+                    };
+                };
+            };
+        };
+    };
+
+    // Admin query
+    public shared({ caller }) func listUsersEnrolled(moduleId : Types.ModuleId) : async [Types.UserProgress] {
+        if (caller != controller) {
+            return [];
+        };
+        
+        Iter.toArray(
+            Iter.filter<Types.UserProgress>(
+                progressStore.vals(),
+                func(p) { p.moduleId == moduleId }
+            )
+        )
+    };
+
+    // System upgrade hooks
     system func preupgrade() {
-        userProgressEntries := Iter.toArray(userProgress.entries());
+        modules := Iter.toArray(moduleStore.entries());
+        userProgress := Iter.toArray(progressStore.entries());
+        authorizedCanisters := Iter.toArray(authorizedCanisterStore.entries());
     };
 
     system func postupgrade() {
-        userProgress := HashMap.fromIter<UserId, UserProgress>(
-            userProgressEntries.vals(),
-            userProgressEntries.size(),
-            Principal.equal,
-            Principal.hash
-        );
-        userProgressEntries := [];
+        moduleStore := HashMap.fromIter<Types.ModuleId, Types.Module>(
+            modules.vals(), modules.size(), Text.equal, Text.hash);
+        progressStore := HashMap.fromIter<Text, Types.UserProgress>(
+            userProgress.vals(), userProgress.size(), Text.equal, Text.hash);
+        authorizedCanisterStore := HashMap.fromIter<Principal, Bool>(
+            authorizedCanisters.vals(), authorizedCanisters.size(), Principal.equal, Principal.hash);
+    };
+
+    // Admin management functions
+    public shared({ caller }) func setController(newController : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized");
+        };
+        controller := newController;
+        #ok(())
+    };
+
+    public shared({ caller }) func authorizeCanister(p : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized");
+        };
+        authorizedCanisterStore.put(p, true);
+        #ok(())
+    };
+
+    public shared({ caller }) func revokeCanister(p : Principal) : async Result.Result<(), Text> {
+        if (caller != controller) {
+            return #err("Unauthorized");
+        };
+        authorizedCanisterStore.delete(p);
+        #ok(())
     };
 
     // Helper function to check if an array contains a value using a custom equality function

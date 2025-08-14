@@ -244,4 +244,74 @@ module {
             maxRetries: Nat;
         };
     };
+
+    // Gamified Learning Types
+    public type ModuleId = Text;
+    public type LessonId = Text;
+    public type ProgressId = Text;
+    public type XP = Nat;
+    
+    public type Module = {
+        id : ModuleId;
+        title : Text;
+        description : Text;
+        lessons : [Lesson];
+        xpReward : XP;
+        requiredForBadges : [Text];
+        isPublished : Bool;
+        createdAt : Int;
+        updatedAt : Int;
+        createdBy : Principal;
+    };
+
+    public type Lesson = {
+        id : LessonId;
+        title : Text;
+        contentHash : Text;
+        contentType : Text;
+        order : Nat;
+        quiz : ?Quiz;
+    };
+
+    public type Quiz = {
+        questions : [Question];
+        passPercentage : Nat;
+    };
+
+    public type Question = {
+        id : Text;
+        prompt : Text;
+        options : [Text];
+        correctIndexes : [Nat];
+        maxScore : Nat;
+    };
+
+    public type UserProgress = {
+        progressId : ProgressId;
+        user : Principal;
+        moduleId : ModuleId;
+        lessonIndex : Nat;
+        lessonStatuses : [Bool];
+        progressPercent : Nat;
+        enrolledAt : Int;
+        completedAt : ?Int;
+        xpAwarded : Bool;
+    };
+
+    public type ModuleInput = {
+        title : Text;
+        description : Text;
+        lessons : [Lesson];
+        xpReward : XP;
+        requiredForBadges : [Text];
+    };
+
+    public type ModuleSummary = {
+        id : ModuleId;
+        title : Text;
+        description : Text;
+        xpReward : XP;
+        lessonCount : Nat;
+        isPublished : Bool;
+    };
 };
