@@ -364,7 +364,7 @@ actor class GamifiedLearningCanister(initialController : Principal) {
                     );
                 };
             }
-        );
+        )
     };
 
     public shared query func getLessonContent(moduleId : ModuleId, lessonId : LessonId) : async Result.Result<Lesson, Text> {
