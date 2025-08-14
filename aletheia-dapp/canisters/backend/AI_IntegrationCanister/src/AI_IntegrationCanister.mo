@@ -171,10 +171,10 @@ actor AI_IntegrationCanister {
         };
         
         // Simple number redaction
-        let digitsOnly = T.map(modified, func (c : Char) : Char {
-            if (Char.isDigit(c)) c else 'x'
+        let digitsOnlyMapped = T.map(modified, func (c : Char) : Char {
+            if (Char.isDigit(c)) c else 'x';
         });
-        let digitsOnly = T.replace(digitsOnly, #text "x", "");
+        let digitsOnly = T.replace(digitsOnlyMapped, #text "x", "");
         if (digitsOnly.size() >= 7) {
             modified := T.replace(modified, #text digitsOnly, "[REDACTED]");
             redacted := true;
