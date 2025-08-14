@@ -100,10 +100,10 @@ actor class FinanceCanister() = this {
     };
 
     // Type definitions
-    public type PayoutInstruction = { recipient : Principal; amountE8s : Nat64; memo : Text };
-    public type XPEntry = { principal : Principal; xp : Nat };
-    public type XPSnapshot = { periodId : Text; entries : [XPEntry] };
-    public type PayoutCycle = {
+    type PayoutInstruction = { recipient : Principal; amountE8s : Nat64; memo : Text };
+    type XPEntry = { principal : Principal; xp : Nat };
+    type XPSnapshot = { periodId : Text; entries : [XPEntry] };
+    type PayoutCycle = {
         periodId : Text;
         poolAmount : Nat64;
         timestamp : Nat64;
@@ -241,7 +241,7 @@ actor class FinanceCanister() = this {
     };
     
     // XP Snapshot handling
-    public shared({ caller }) func submitXPSnapshot(snapshot : XPSnapshot) : async Result.Result<(), Text> {
+    public shared(msg) func submitXPSnapshot(snapshot : XPSnapshot) : async Result.Result<(), Text> {
         if (not isController(caller) and not isReputationLogic(caller)) {
             return #err("Unauthorized");
         };
@@ -267,7 +267,7 @@ actor class FinanceCanister() = this {
     };
 
     // Payout calculation
-    public shared({ caller }) func calculatePayouts(periodId : Text) : async Result.Result<[PayoutInstruction], Text> {
+    public shared(msg) func calculatePayouts(periodId : Text) : async Result.Result<[PayoutInstruction], Text> {
         let cycle = switch (payoutCycles.get(periodId)) {
             case (?c) c;
             case null return #err("Payout cycle not found");
@@ -369,7 +369,7 @@ actor class FinanceCanister() = this {
     };
     
     // Payout distribution
-    public shared({ caller }) func distributePayouts(periodId : Text) : async Result.Result<[PayoutInstruction], Text> {
+    public shared(msg) func distributePayouts(periodId : Text) : async Result.Result<[PayoutInstruction], Text> {
         assert isController(caller);
         
         let cycle = switch (payoutCycles.get(periodId)) {
@@ -411,7 +411,7 @@ actor class FinanceCanister() = this {
     };
 
     // Withdraw individual pending balance (for users)
-    public shared({ caller }) func withdrawPending() : async TransferResult {
+    public shared(msg) func withdrawPending() : async TransferResult {
         let account = accountIdentifier(caller, null);
         let current = Trie.get(earnings, key(caller), Principal.equal);
         
@@ -549,23 +549,23 @@ actor class FinanceCanister() = this {
     };
     
     // Query functions
-    query func getRevenuePool() : async Nat64 {
+    public query func getRevenuePool() : async Nat64 {
         revenuePool;
     };
     
-    query func getUserEarnings(user : Principal) : async Nat64 {
+    public query func getUserEarnings(user : Principal) : async Nat64 {
         Option.get(Trie.get(earnings, key(user), Principal.equal), 0 : Nat64)
     };
     
-    query func getMonthlyXP(user : Principal) : async Nat {
+    public query func getMonthlyXP(user : Principal) : async Nat {
         Option.get(Trie.get(monthlyXP, key(user), Principal.equal), 0 : Nat)
     };
     
-    query func getTotalMonthlyXP() : async Nat {
+    public query func getTotalMonthlyXP() : async Nat {
         totalMonthlyXP;
     };
     
-    query func getTransactions(since : Int) : async [Transaction] {
+    public query func getTransactions(since : Int) : async [Transaction] {
         Array.filter(transactions, func (t : Transaction) : Bool {
             let ts = switch (t) {
                 case (#deposit d) d.timestamp;
@@ -576,11 +576,11 @@ actor class FinanceCanister() = this {
         });
     };
     
-    query func getConfig() : async Config {
+    public query func getConfig() : async Config {
         config;
     };
     
-    query func getAdmins() : async [Principal] {
+    public query func getAdmins() : async [Principal] {
         admins;
     };
     
