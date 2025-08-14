@@ -4,7 +4,7 @@ import Error "mo:base/Error";
 import Text "mo:base/Text";
 import Nat "mo:base/Nat";
 
-actor {
+persistent actor {
   type EscalationResult = {
     #assignToCouncil : [Principal];
     #assignToSeniors : [Principal];
