@@ -644,4 +644,4 @@ actor class NotificationCanister(initialAdmins: [Principal]) = this {
         };
         out
     };
-};
+
