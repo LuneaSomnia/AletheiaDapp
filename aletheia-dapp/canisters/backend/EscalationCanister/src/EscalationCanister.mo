@@ -14,7 +14,7 @@ actor EscalationCanister {
     // ------ Core Types ------
     public type Verdict = {
         #True; #MostlyTrue; #HalfTruth; #Misleading; #False;
-        #Unsubstantiated; #Opinion; #Propaganda;
+        #Unsubstantiated; #Opinion; #Propaganda
     };
     
     public type ReviewerOutcome = {
