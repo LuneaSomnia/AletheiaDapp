@@ -1,5 +1,6 @@
 import Array "mo:base/Array";
 import Buffer "mo:base/Buffer";
+import Hash "mo:base/Hash";
 import HashMap "mo:base/HashMap";
 import Int "mo:base/Int";
 import Iter "mo:base/Iter";
@@ -30,9 +31,13 @@ actor class GamifiedLearningCanister(initialController : Principal) {
         authorizedCanisters.vals(), authorizedCanisters.size(), Principal.equal, Principal.hash);
 
     // Canister references
+    stable var userAccountCanister : Principal = Principal.fromText("aaaaa-aa");
+    stable var reputationCanister : Principal = Principal.fromText("aaaaa-aa");
+    stable var notificationCanister : Principal = Principal.fromText("aaaaa-aa");
+    
     let userAccount : actor {
         recordActivity : (Principal, Types.ActivityRecord) -> async Result.Result<(), Text>;
-    } = actor("UserAccountCanister");
+    } = actor(Principal.toText(userAccountCanister));
     
     let reputation : actor {
         awardXP : (Principal, Nat, Text) -> async Result.Result<(), Text>;
@@ -80,13 +85,6 @@ actor class GamifiedLearningCanister(initialController : Principal) {
         difficulty : Text; // Added difficulty level
     };
 
-    public type Module = {
-        id : ModuleId;
-        title : Text;
-        description : Text;
-        lessons : [Lesson];
-        category : Text; // Added category for filtering
-    };
 
     public type LessonProgress = {
         lessonId : LessonId;
@@ -97,13 +95,13 @@ actor class GamifiedLearningCanister(initialController : Principal) {
     };
 
     public type UserProgress = {
-        userId : UserId;
+        userId : Principal;
         completedModules : [ModuleId];
         lessonProgress : [LessonProgress];
-        totalRewardPoints : RewardPoints;
-        streak : Nat; // Daily streak counter
-        lastActive : Int; // Last active timestamp
-        achievements : [Text]; // Earned achievements
+        totalRewardPoints : Nat;
+        streak : Nat;
+        lastActive : Int;
+        achievements : [Text];
     };
 
     public type QuizResult = {
@@ -399,7 +397,7 @@ actor class GamifiedLearningCanister(initialController : Principal) {
         };
     };
 
-    public shared (msg) func submitLessonAnswers(
+    public shared(msg) func submitLessonAnswers(
         moduleId : ModuleId,
         lessonId : LessonId,
         answers : [Answer]
@@ -852,7 +850,7 @@ actor class GamifiedLearningCanister(initialController : Principal) {
     // System upgrade hooks
     system func preupgrade() {
         modules := Iter.toArray(moduleStore.entries());
-        userProgress := Iter.toArray(progressStore.entries());
+        userProgressEntries := Iter.toArray(progressStore.entries());
         authorizedCanisters := Iter.toArray(authorizedCanisterStore.entries());
     };
 
@@ -860,7 +858,7 @@ actor class GamifiedLearningCanister(initialController : Principal) {
         moduleStore := HashMap.fromIter<Types.ModuleId, Types.Module>(
             modules.vals(), modules.size(), Text.equal, Text.hash);
         progressStore := HashMap.fromIter<Text, Types.UserProgress>(
-            userProgress.vals(), userProgress.size(), Text.equal, Text.hash);
+            userProgressEntries.vals(), userProgressEntries.size(), Text.equal, Text.hash);
         authorizedCanisterStore := HashMap.fromIter<Principal, Bool>(
             authorizedCanisters.vals(), authorizedCanisters.size(), Principal.equal, Principal.hash);
     };
