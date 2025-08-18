@@ -1,4 +1,4 @@
 import { setupWorker } from 'msw';
-import { handlers } from './handlers';
+import { createHandlers } from '../../../../shared-mocks/handlers';
 
-export const worker = setupWorker(...handlers);
+export const worker = setupWorker(...createHandlers({ ui: 'aletheian' }));
