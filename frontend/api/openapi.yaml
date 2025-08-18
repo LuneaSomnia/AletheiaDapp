@@ -1,0 +1,133 @@
+openapi: 3.0.0
+info:
+  title: Aletheia Mock API
+  version: 1.0.0
+  description: Mock API for frontend development
+
+paths:
+  /api/auth/login:
+    post:
+      tags: [auth]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        200:
+          description: Authentication successful
+          content:
+            application/json:
+              schema: 
+                $ref: '#/components/schemas/AuthResponse'
+                
+  /api/auth/me:
+    get:
+      tags: [auth]
+      responses:
+        200:
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+                
+  /api/claims:
+    get:
+      tags: [claims]
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: limit
+          in: query 
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimListResponse'
+                
+    post:
+      tags: [claims]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClaimRequest'
+      responses:
+        201:
+          description: Claim created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+                
+  /api/aletheian/queue:
+    get:
+      tags: [aletheian]
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AletheianTask'
+
+components:
+  schemas:
+    AuthResponse:
+      type: object
+      properties:
+        token: {type: string}
+        user: {$ref: '#/components/schemas/User'}
+        
+    User:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        username: {type: string}
+        email: {type: string, format: email}
+        notificationPreferences: 
+          $ref: '#/components/schemas/NotificationPreferences'
+        
+    CreateClaimRequest:
+      type: object
+      required: [claim, claimType, tags]
+      properties:
+        claim: {type: string}
+        claimType: {type: string, enum: [text, image]}
+        source: {type: string}
+        context: {type: string}
+        tags: 
+          type: array
+          items: {type: string}
+        file: {type: string, format: binary}
+        
+    Claim:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        status: 
+          type: string
+          enum: [pending, verified, disputed, rejected]
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        
+    AletheianTask:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        claimText: {type: string}
+        deadline: {type: string, format: date-time}
+        
+    ErrorResponse:
+      type: object
+      properties:
+        error: {type: string}
+        code: {type: string}
+        details: {type: object}
+        
+TODO: Add remaining schemas and error responses
