@@ -1,0 +1,9 @@
+[
+  {
+    "claimId": "a1b2c3d4-1234-5678-9abc-def123456789",
+    "verifications": 3,
+    "disputes": 0,
+    "lastUpdated": "2025-08-17T16:45:00Z",
+    "evidenceHashes": ["QmXyZABC123", "Qm9876FedCba"]
+  }
+]

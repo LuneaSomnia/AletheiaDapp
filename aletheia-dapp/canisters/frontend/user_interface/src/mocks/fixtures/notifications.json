@@ -1,0 +1,18 @@
+[
+  {
+    "id": "n1",
+    "type": "info",
+    "title": "New Claim Assignment",
+    "message": "You've been assigned to verify claim #1234",
+    "timestamp": "2025-08-18T14:30:00Z",
+    "read": false
+  },
+  {
+    "id": "n2",
+    "type": "reminder",
+    "title": "Deadline Approaching",
+    "message": "Claim #1234 verification due in 24 hours",
+    "timestamp": "2025-08-19T09:15:00Z",
+    "read": false
+  }
+]

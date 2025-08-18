@@ -1,0 +1,20 @@
+[
+  {
+    "id": "77e3d4a1-2a48-4ec4-b4e8-17a9f6d7f5b9",
+    "username": "fact_checker_01",
+    "email": "checker@aletheia.example",
+    "notificationPreferences": {
+      "email": true,
+      "push": true
+    }
+  },
+  {
+    "id": "a2b3c4d5-e6f7-4859-bcde-f01234567890",
+    "username": "researcher_42",
+    "email": "research42@academia.example",
+    "notificationPreferences": {
+      "email": false,
+      "push": true
+    }
+  }
+]
