@@ -1,0 +1,16 @@
+[
+  {
+    "id": "b4a3e203-1b48-437f-88d5-8a6e2a8d9e01",
+    "claimText": "The moon landing was filmed in a studio",
+    "deadline": "2025-08-20T12:00:00Z",
+    "assignee": "aletheian_verifier",
+    "status": "pending"
+  },
+  {
+    "id": "c5b2f489-7d6f-4a1e-9c3d-2b8e5f6d1a0b",
+    "claimText": "Climate change is a hoax",
+    "deadline": "2025-08-22T18:30:00Z",
+    "assignee": null,
+    "status": "unassigned"
+  }
+]

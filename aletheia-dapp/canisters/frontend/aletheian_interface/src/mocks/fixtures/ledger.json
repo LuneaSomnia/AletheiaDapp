@@ -1,0 +1,12 @@
+[
+  {
+    "claimId": "b4a3e203-1b48-437f-88d5-8a6e2a8d9e01",
+    "verifications": 3,
+    "disputes": 1,
+    "evidence": [
+      "https://archive.org/moon_landing",
+      "ipfs://QmXyZABC123"
+    ],
+    "lastUpdated": "2025-08-18T09:45:00Z"
+  }
+]
