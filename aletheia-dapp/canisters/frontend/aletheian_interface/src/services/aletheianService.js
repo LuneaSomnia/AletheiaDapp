@@ -5,5 +5,6 @@ export const aletheianService = {
   getQueue: () => api.get(ENDPOINTS.ALETHEIAN_QUEUE),
   submitVerification: (id, data) => api.post(ENDPOINTS.ALETHEIAN_SUBMIT(id), data),
   getLedgerEntry: (claimId) => api.get(ENDPOINTS.LEDGER(claimId)),
-  getProgress: () => api.get(ENDPOINTS.ALETHEIAN_PROGRESS)
+  getProgress: () => api.get(ENDPOINTS.ALETHEIAN_PROGRESS),
+  getLedgerEntries: () => api.get(ENDPOINTS.LEDGER)
 };

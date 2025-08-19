@@ -29,6 +29,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
+    "start:mock": "cross-env VITE_USE_MOCKS=true VITE_PORT=3002 vite",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
