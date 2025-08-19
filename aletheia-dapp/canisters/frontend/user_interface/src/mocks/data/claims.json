@@ -1,0 +1,14 @@
+[
+  {
+    "id": 1,
+    "claim": "Drinking bleach cures COVID-19",
+    "status": "FALSE",
+    "summary": "No evidence supports this dangerous claim"
+  },
+  {
+    "id": 2,
+    "claim": "5G causes COVID-19",
+    "status": "FALSE",
+    "summary": "Debunked conspiracy theory with no scientific basis"
+  }
+]
